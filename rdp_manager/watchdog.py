@@ -24,9 +24,11 @@ WATCHDOG_KILLED = 99
 _POLL_S = 0.5
 
 
-def spawn(child_args, stdout=None, stderr=None, stdin=None):
+def spawn(child_args, stdout=None, stderr=None, stdin=None, **popen_kwargs):
     """Spawn `child_args` under the watchdog. Returns the wrapper Popen —
-    same interface as before: wait()/poll()/stderr all forward the child's.
+    same interface as a direct Popen: wait()/poll()/stderr all forward the
+    child's behavior (any extra Popen kwargs are passed through so callers
+    can keep using text=True, bufsize=1, …).
     Works from source runs (python3) and frozen bundles (sys.executable)."""
     script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                           "ubuntu_rdp_manager.py")
@@ -38,7 +40,7 @@ def spawn(child_args, stdout=None, stderr=None, stdin=None):
                         str(os.getpid()), "--", *child_args]
     try:
         return subprocess.Popen(wrapper_argv, stdout=stdout,
-                                stderr=stderr, stdin=stdin)
+                                stderr=stderr, stdin=stdin, **popen_kwargs)
     except OSError:
         # No fallback silent spawn: if the wrapper can't start, spawning a
         # plain child would reintroduce the orphan risk — surface it.
