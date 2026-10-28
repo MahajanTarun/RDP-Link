@@ -125,7 +125,10 @@ def _camera_input_args(device):
         return ["-f", "avfoundation", "-framerate", CAMERA_FPS,
                 "-video_size", CAMERA_SIZE, "-pixel_format", "uyvy422",
                 "-i", str(device)]
-    return ["-f", "v4l2", "-i", str(device)]
+    dev = str(device)
+    if not dev.startswith("/"):
+        dev = f"/dev/{dev}"        # picker stores "video0", v4l2 needs the node
+    return ["-f", "v4l2", "-i", dev]
 
 
 def _mic_input_args():
@@ -160,6 +163,7 @@ class BridgeManager:
         self.camera_procs = {}   # profile id -> Popen
         self.mic_procs = {}
         self._recv_ok = {}       # profile id -> bool | None (last handshake)
+        self._misses = {}        # profile id -> consecutive unanswered rounds
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -181,14 +185,28 @@ class BridgeManager:
         self._terminate(self.camera_procs.pop(profile_id, None))
         self._terminate(self.mic_procs.pop(profile_id, None))
         self._recv_ok.pop(profile_id, None)
+        self._misses.pop(profile_id, None)
 
     def stop_all(self):
-        for group in (self.camera_procs, self.mic_procs):
-            for proc in list(group.values()):
-                self._terminate(proc)
+        # Phase 1: signal everything (parallel); Phase 2: reap.
+        for proc in list(self.camera_procs.values()) + list(self.mic_procs.values()):
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+            except OSError:
+                pass
+        for proc in list(self.camera_procs.values()) + list(self.mic_procs.values()):
+            try:
+                proc.wait(timeout=3)
+            except (subprocess.TimeoutExpired, OSError):
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
         self.camera_procs.clear()
         self.mic_procs.clear()
         self._recv_ok.clear()
+        self._misses.clear()
 
     def active(self):
         return any(p.poll() is None for p in
@@ -303,6 +321,11 @@ class BridgeManager:
         return True
 
     # -- health ---------------------------------------------------------------
+    # The UDP handshake is a BLOCKING read (recvfrom with timeout/retries), so
+    # probing MUST NOT run inside a Tk after-callback — that would freeze the
+    # whole GUI for seconds every 15s. The check runs in a worker thread and
+    # applies results back on the main thread. After repeated misses the
+    # cadence backs off 15s -> 60s (less wake, same coverage).
 
     def schedule_health(self, profile, delay, announce=False):
         self.app.root.after(delay, lambda: self._monitor(profile, announce))
@@ -313,18 +336,33 @@ class BridgeManager:
                   (self.mic_procs.get(pid) and profile.get("mic") == "host"))
         if not active:
             return
-        self._handshake(profile, announce)
-        self.schedule_health(profile, delay=15000)   # quiet re-check
+        misses = self._misses.get(pid, 0)
+        delay = 15000 if misses < 3 else 60000      # backoff after 3 misses
+        threading.Thread(target=self._probe_async, args=(profile, announce),
+                         daemon=True).start()
+        self.schedule_health(profile, delay=delay)   # quiet re-check
 
-    def _handshake(self, profile, announce):
+    def _probe_async(self, profile, announce):
+        """Runs OFF the Tk main thread: all blocking network here."""
         pid = profile["id"]
         checks = []
         if self.camera_procs.get(pid) and profile.get("camera") == "host":
             checks.append(("Camera", CAMERA_CTL_PORT))
         if self.mic_procs.get(pid) and profile.get("mic") == "host":
             checks.append(("Microphone", MIC_CTL_PORT))
-        for label, port in checks:
-            resp = probe_receiver(profile["host"], port)
+        results = [(label, probe_receiver(profile["host"], port))
+                   for label, port in checks]
+        misses = sum(1 for _l, resp in results if not resp)
+        okany = any(resp for _l, resp in results)
+        self.app.root.after(0, lambda: self._apply_handshake(
+            profile, announce, results, misses, okany))
+
+    def _apply_handshake(self, profile, announce, results, misses, okany):
+        pid = profile["id"]
+        # `misses` counts consecutive rounds with zero responders (drives
+        # the 15s -> 60s backoff), not raw per-device failures.
+        self._misses[pid] = 0 if okany else self._misses.get(pid, 0) + 1
+        for label, resp in results:
             ok = bool(resp)
             if self._recv_ok.get(pid) != ok or announce:
                 if ok:
@@ -340,7 +378,7 @@ class BridgeManager:
                         f"{label}: no receiver response on {profile['host']} — "
                         f"right-click the profile → “Set up receivers on host…”",
                         warn=True)
-            self._recv_ok[pid] = ok
+        self._recv_ok[pid] = okany
 
     def _health(self, label, proc, profile, procmap, first=False):
         """2.5 s after spawn: did the bridge die immediately?"""

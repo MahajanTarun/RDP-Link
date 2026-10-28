@@ -46,7 +46,7 @@ jobs:
           python-version: "3.12"
       - name: macOS prerequisites
         if: runner.os == 'macOS'
-        run: brew install tcl-tk
+        run: echo "python.org Python bundles Tk — nothing to install"
       - name: Linux prerequisites
         if: runner.os == 'Linux'
         run: |

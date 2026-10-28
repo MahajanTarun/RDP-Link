@@ -16,6 +16,37 @@ from .bridges import BridgeManager
 from .permissions import probe_device
 from .paths import ASKPASS_PATH, IS_MAC
 
+_FREERDP_MAJOR_CACHE = {}
+
+
+def freerdp_major(exe):
+    """Freerdp major version (cached). The /kbd layout syntax changed
+    between FreeRDP 2.x ('/kbd:0x00000409') and 3.x ('/kbd:layout:0x409')."""
+    if exe in _FREERDP_MAJOR_CACHE:
+        return _FREERDP_MAJOR_CACHE[exe]
+    major = 3                                        # optimistic default
+    try:
+        r = subprocess.run([exe, "--version"], capture_output=True, text=True,
+                           timeout=5)
+        import re as _re
+        m = _re.search(r"version\s+(\d+)", r.stdout)
+        if m:
+            major = int(m.group(1))
+    except (OSError, subprocess.SubprocessError):
+        pass
+    _FREERDP_MAJOR_CACHE[exe] = major
+    return major
+
+
+def kbd_flag(code, major):
+    code = str(code)
+    if major >= 3:
+        return f"/kbd:layout:{code}"
+    try:
+        return f"/kbd:0x{int(code, 16):08X}"        # 2.x: 8-digit padded
+    except ValueError:
+        return None
+
 
 def format_host(host):
     """Wrap IPv6 literals in brackets for /v:[addr]:port."""
@@ -30,15 +61,19 @@ def sanitize_port(port):
     return port if port.isdigit() and 0 < int(port) < 65536 else "3389"
 
 
-def build_args(profile, stdin_pass=False, home=None, kbd_layout=None):
+def build_args(profile, stdin_pass=False, home=None, kbd_layout=None,
+               freerdp_major_v=3):
     """FreeRDP flags for a profile (executable not included).
     No password ever appears here. `kbd_layout` ('0x409') comes from
-    rdp_manager.keyboard.resolve_for_connect()."""
+    rdp_manager.keyboard.resolve_for_connect(); pass freerdp_major_v<2
+    from freerdp_major() when driving an old FreeRDP 2.x client."""
     home = home or os.path.expanduser("~")
     args = [f"/v:{format_host(profile['host'])}:{sanitize_port(profile['port'])}",
             f"/u:{profile['username']}"]
     if kbd_layout:
-        args.append(f"/kbd:layout:{kbd_layout}")
+        flag = kbd_flag(kbd_layout, freerdp_major_v)
+        if flag:
+            args.append(flag)
     if profile.get("smartSizing", True):
         args.append("/smart-sizing")
     if profile.get("audio") == "host":
@@ -60,7 +95,8 @@ def shell_quote_cmd(exe, profile, stdin_pass=False, kbd_layout=None):
     """Copy-pasteable command (password placeholder, never the real one)."""
     import shlex
     parts = [exe] + build_args(profile, stdin_pass=stdin_pass,
-                               kbd_layout=kbd_layout)
+                               kbd_layout=kbd_layout,
+                               freerdp_major_v=freerdp_major(exe))
     quoted = " ".join(shlex.quote(p) for p in parts)
     if stdin_pass:
         quoted = f"printf '%s\\n' 'YOUR_PASSWORD' | {quoted}"
@@ -104,7 +140,8 @@ class ConnectionController:
         from .keyboard import resolve_for_connect
         kbd = resolve_for_connect(profile)
 
-        args = [exe] + build_args(profile, stdin_pass=use_stdin, kbd_layout=kbd)
+        args = [exe] + build_args(profile, stdin_pass=use_stdin, kbd_layout=kbd,
+                                  freerdp_major_v=freerdp_major(exe))
         env = dict(os.environ)
         if password is not None and os.access(ASKPASS_PATH, os.X_OK):
             env["FREERDP_ASKPASS"] = ASKPASS_PATH
@@ -183,8 +220,24 @@ class ConnectionController:
             self.connect(profile)
 
     def disconnect_all(self):
-        for proc in list(self.processes.values()):
-            _terminate(proc)
+        """Send SIGTERM to everything in parallel, then reap — quitting with
+        several sessions must not take N × 3 seconds."""
+        procs = [p for p in self.processes.values() if p.poll() is None]
+        for p in procs:
+            try:
+                p.terminate()
+            except OSError:
+                pass
+        for p in procs:
+            try:
+                p.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                try:
+                    p.kill()
+                except OSError:
+                    pass
+            except OSError:
+                pass
         self.bridges.stop_all()
 
     # -- permissions (macOS only) ---------------------------------------------

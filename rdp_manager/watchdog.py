@@ -69,6 +69,9 @@ def _kill_child(proc):
 def run(parent_pid, child_args):
     """Watchdog main loop (called by the entry point's --bridge-watchdog).
     Blocks; exits with the child's exit code, or WATCHDOG_KILLED."""
+    if not child_args:
+        sys.stderr.write("[rdp-watchdog] no child command given\n")
+        return 2
     proc = None
     def _forward(_signum, _frame):
         if proc is not None:

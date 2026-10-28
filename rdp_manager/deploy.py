@@ -13,10 +13,14 @@ CAMERA_SCRIPT = "camera-receiver.sh"
 MIC_SCRIPT = "mic-receiver.sh"
 
 
-def setup_command(host, username=None, port=None):
-    """Shell one-liner that installs both receivers on `host`."""
+def setup_command(host, username=None, ssh_port=None):
+    """Shell one-liner that installs both receivers on `host`.
+
+    `ssh_port` is the SSH listener (default 22). It is NEVER derived from
+    the RDP port — the two are unrelated services (bug in v4.4: profiles on
+    an alternate RDP port broke SSH setup)."""
     user_at = f"{username}@{host}" if username else host
-    port_flag = f"-p {port} " if port and str(port) != "3389" else ""
+    port_flag = f"-p {ssh_port} " if ssh_port else ""
     scripts = (f'"{receiver_script(CAMERA_SCRIPT)}" '
                f'"{receiver_script(MIC_SCRIPT)}"')
     remote = ("sudo -v; bash /tmp/urdp-camera-receiver.sh --install; "
@@ -57,13 +61,13 @@ def open_terminal(cmd):
 def deploy_receivers(profile):
     """Open a terminal that installs the receivers on the profile's host."""
     cmd = setup_command(profile["host"], profile.get("username"),
-                        profile.get("port"))
+                        ssh_port=profile.get("sshPort"))
     return open_terminal(cmd)
 
 
 def copy_setup_command(profile) -> str:
     return setup_command(profile["host"], profile.get("username"),
-                         profile.get("port"))
+                         ssh_port=profile.get("sshPort"))
 
 
 def receiver_health_hint(host):

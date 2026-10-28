@@ -52,6 +52,7 @@ def default_profiles():
         "fileTransfer": True,
         "stdinPass": True,
         "certTofu": True,
+        "keyboard": "auto",
     }]
 
 

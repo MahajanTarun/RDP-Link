@@ -42,3 +42,21 @@ def test_legacy_raw_value_read():
             assert secrets.store_get("zz-test-legacy") == "rawpw123"
         finally:
             secrets.store_delete("zz-test-legacy")
+
+
+def test_linux_libsecret_gets_password_on_stdin(monkeypatch):
+    """secret-tool store must receive the hex blob via stdin."""
+    monkeypatch.setattr(secrets, "IS_MAC", False)
+    captured = {}
+
+    class FakeR:
+        returncode = 0
+        stdout = b""
+
+    monkeypatch.setattr(secrets, "_secret_tool",
+                        lambda *a, input_bytes=None: captured.update(
+                            args=a, input=input_bytes) or FakeR())
+    monkeypatch.setattr(secrets, "_file_write", lambda a, v: None)
+    assert secrets.store_set("acct", "pw123") is True
+    assert captured["input"] == b"hex:7077313233\n"
+    assert captured["args"][:2] == ("store", "service")

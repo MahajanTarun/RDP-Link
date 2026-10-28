@@ -73,6 +73,10 @@ def test_parent_death_survivor_check_positive_case():
     assert alive, "premise broken: child died on its own"
 
 
+def test_watchdog_rejects_empty_argv():
+    assert watchdog.run(1, []) == 2
+
+
 def test_device_chips_reflect_active_bridges():
     from rdp_manager.bridges import BridgeManager
 

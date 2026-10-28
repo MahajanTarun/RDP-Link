@@ -260,12 +260,20 @@ class ProfileEditor(tk.Toplevel):
         host = self._vars["host"].get().strip()
         if not host:
             return
+        from ..bridges import MIC_CTL_PORT
+        wants_cam = self.profile.get("camera") == "host"
+        wants_mic = self.profile.get("mic") == "host"
         def work():
-            resp = probe_receiver(host, CAMERA_CTL_PORT)
+            alive = []
+            if wants_mic and probe_receiver(host, MIC_CTL_PORT):
+                alive.append("mic")
+            if wants_cam and probe_receiver(host, CAMERA_CTL_PORT):
+                alive.append("camera")
             self.after(0, lambda: self._camtest_var.set(
-                "✓ Receiver is responding on host" if resp else
-                "Receiver not responding yet — it appears after install "
-                "completes in the terminal"))
+                f"✓ Receivers responding on host: {', '.join(alive)}"
+                if alive else
+                "No receiver response yet — they appear after the install "
+                "finishes in the terminal"))
         threading.Thread(target=work, daemon=True).start()
 
     # -- camera helpers -----------------------------------------------------
@@ -280,7 +288,8 @@ class ProfileEditor(tk.Toplevel):
         dev = self._camdev_var.get().split("—")[0].strip() or "0"
         self._camtest_var.set("Testing camera…")
         def work():
-            out = os.path.join(paths.SUPPORT_DIR, "camera-test.jpg")
+            import tempfile
+            out = os.path.join(tempfile.gettempdir(), "rdplink-camera-test.jpg")
             from ..exe import find_ffmpeg
             ff = find_ffmpeg()
             ok, err = False, "ffmpeg not found"
@@ -290,7 +299,8 @@ class ProfileEditor(tk.Toplevel):
                            "-video_size", "1280x720", "-pixel_format",
                            "uyvy422", "-i", dev]
                 else:
-                    inp = ["-f", "v4l2", "-i", dev]
+                    in_dev = dev if dev.startswith("/") else f"/dev/{dev}"
+                    inp = ["-f", "v4l2", "-i", in_dev]
                 try:
                     r = subprocess.run(
                         [ff, "-hide_banner", "-loglevel", "error"] + inp +

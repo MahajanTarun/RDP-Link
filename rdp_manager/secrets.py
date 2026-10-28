@@ -34,9 +34,11 @@ def _security(*args):
         return None
 
 
-def _secret_tool(*args):
+def _secret_tool(*args, input_bytes=None):
+    """secret-tool reads the secret from STDIN when storing — must be piped."""
     try:
-        return subprocess.run(["secret-tool", *args], capture_output=True)
+        return subprocess.run(["secret-tool", *args], capture_output=True,
+                              input=input_bytes)
     except OSError:
         return None
 
@@ -82,11 +84,9 @@ def store_set(account, password):
         if r is not None and r.returncode == 0:
             return True
         # fall through to file if Keychain refused
-    r = _secret_tool("store", "service", "ubuntu-rdp-manager",
-                     "username", account)
+    r = _secret_tool("store", "service", "rdp-link",
+                     "username", account, input_bytes=(blob + "\n").encode())
     if r is not None and r.returncode == 0:
-        import secrets as _s
-        _file_write(account + ".note", _HEX + _s.token_hex(8))
         return True
     _file_write(account, blob)
     return True
@@ -101,7 +101,7 @@ def store_get(account):
             out = r.stdout.decode("utf-8", "replace")
             raw = out[:-1] if out.endswith("\n") else out
     else:
-        r = _secret_tool("lookup", "service", "ubuntu-rdp-manager",
+        r = _secret_tool("lookup", "service", "rdp-link",
                          "username", account)
         if r is not None and r.returncode == 0 and r.stdout.strip():
             raw = r.stdout.decode("utf-8", "replace").strip()

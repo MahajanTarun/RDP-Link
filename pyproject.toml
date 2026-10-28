@@ -1,6 +1,6 @@
 [project]
 name = "rdp-link"
-version = "4.4.1"
+version = "4.4.2"
 description = "Cross-platform RDP connection manager with camera, microphone, audio and clipboard redirection to Linux hosts"
 readme = "README.md"
 requires-python = ">=3.9"

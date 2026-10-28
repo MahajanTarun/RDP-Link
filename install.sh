@@ -49,7 +49,8 @@ do_uninstall() {
   case "$OS" in
     Darwin)
       rm -rf "$HOME/Applications/$APP_NAME.app"
-      $SUDO rm -rf "$HOME/Applications/RDP Link.app"; $SUDO rm -f /usr/local/bin/rdplink /usr/local/bin/urdm
+      $SUDO rm -f /usr/local/bin/rdplink /usr/local/bin/urdm \
+                  /usr/local/bin/ubuntu-rdp-manager
       log "macOS guest uninstalled (brew formulae freerdp/ffmpeg kept)."
       ;;
     Linux)

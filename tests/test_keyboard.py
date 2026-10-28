@@ -88,6 +88,16 @@ def test_args_include_kbd_flag():
     assert a[2] == "/kbd:layout:0x409"
 
 
+def test_kbd_syntax_freerdp2_vs_freerdp3():
+    """FreeRDP 2.x uses the legacy /kbd:0x00000409 syntax (Linux guests)."""
+    a3 = build_args(BASE, kbd_layout="0x409", freerdp_major_v=3)
+    assert "/kbd:layout:0x409" in a3
+    a2 = build_args(BASE, kbd_layout="0x409", freerdp_major_v=2)
+    assert "/kbd:0x00000409" in a2
+    a2b = build_args(BASE, kbd_layout="0x10409", freerdp_major_v=2)
+    assert "/kbd:0x00010409" in a2b
+
+
 def test_args_omit_kbd_when_unresolved():
     assert not any(x.startswith("/kbd") for x in build_args(BASE))
 
