@@ -9,14 +9,52 @@ an orphaned ffmpeg holding the camera.
 """
 
 import atexit
+import os
 import subprocess
 import sys
 
 from .exe import find_ffmpeg
+from . import paths
 
 CAMERA_SIZE = "1280x720"
 
 _inflight = set()
+
+
+# ------------------------------------------------------- permission cache --
+# Opening a device to "probe" it re-triggers macOS permission prompts on
+# every app launch and flickers the camera LED. v4.1 caches the outcome:
+# once a device has opened successfully, it is never probed again until a
+# bridge later fails (e.g. the user revoked access in System Settings).
+
+def _marker(kind):
+    return os.path.join(paths.SUPPORT_DIR, f".perm-ok-{kind}")
+
+
+def _cached_ok(kind):
+    try:
+        return os.path.exists(_marker(kind))
+    except OSError:
+        return False
+
+
+def _set_cache(kind, ok):
+    try:
+        path = _marker(kind)
+        if ok:
+            paths.ensure_dirs()
+            open(path, "w").close()
+        elif os.path.exists(path):
+            os.unlink(path)
+    except OSError:
+        pass
+
+
+def reset_permission_cache(kind=None):
+    """Forget cached status so the next probe actually opens the device
+    ("Check Permissions…" uses this to re-verify on demand)."""
+    for k in ([kind] if kind else ("camera", "microphone")):
+        _set_cache(k, None)
 
 
 def _kill_inflight():
@@ -53,9 +91,14 @@ def _run_probe(args, timeout):
 
 def probe_device(kind, device="0", timeout=8):
     """Return (ok, detail): True/False = known result, None = undetermined.
-    detail == 'denied' means the macOS TCC permission is off."""
+    detail == 'denied' means the macOS TCC permission is off.
+
+    Cached fast path: if this device opened successfully before, we don't
+    touch the hardware at all — no LED, no prompt, zero cost."""
     if not sys.platform == "darwin":
         return (True, "")  # Linux has no TCC; nothing to pre-probe
+    if _cached_ok(kind):
+        return (True, "")
     ff = find_ffmpeg()
     if not ff:
         return (None, "ffmpeg not found")
@@ -73,6 +116,7 @@ def probe_device(kind, device="0", timeout=8):
     except OSError as e:
         return (None, str(e))
     if rc == 0:
+        _set_cache(kind, True)
         return (True, "")
     if rc is None:
         return (None, "timed out")
@@ -80,6 +124,7 @@ def probe_device(kind, device="0", timeout=8):
     low = err.lower()
     if ("denied" in low or "not authorized" in low or "no permission" in low
             or "not permitted" in low or "not allowed" in low):
+        _set_cache(kind, False)     # revoked or bad context — re-probe later
         return (False, "denied")
     last = err.splitlines()[-1] if err else f"exit {rc}"
     return (False, last)

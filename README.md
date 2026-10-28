@@ -45,21 +45,30 @@ like launching `sdl-freerdp` yourself, minus the typing.
 
 ## Quick start
 
-### Client (this is the only machine you install anything on)
+### One command (macOS and Linux)
 
-**macOS**
 ```sh
-brew install freerdp ffmpeg
-./build-app.sh            # builds, installs to ~/Applications, launches
+curl -fsSL https://raw.githubusercontent.com/YOURORG/UbuntuRDPManagerApp/main/install.sh \
+     -o /tmp/urdm-install.sh && bash /tmp/urdm-install.sh guest
 ```
 
-**Linux**
+(This installs the **guest/client** — both the GUI and the `urdm` CLI, from
+the same binary. Run `bash /tmp/urdm-install.sh host` on the Ubuntu machine
+to install the receiver services there. Other roles: `both`, `--uninstall`.)
+
+### Manual (macOS guest)
+```sh
+brew bundle --file=Brewfile          # freerdp + ffmpeg
+./build-app.sh                       # build + install to ~/Applications
+```
+
+### Manual (Linux guest)
 ```sh
 sudo apt install freerdp3-x11 ffmpeg python3-tk   # or freerdp2-x11
-./build-linux.sh          # produces dist/ubuntu-rdp-manager (single file)
+./build-linux.sh                     # produces dist/ubuntu-rdp-manager
 ```
 
-**Or straight from source** (both platforms):
+### Or straight from source (both platforms)
 ```sh
 python3 ubuntu_rdp_manager.py
 ```
@@ -75,6 +84,14 @@ python3 ubuntu_rdp_manager.py
 
 No manual host setup. No package juggling. No remembering which script to
 run — the app tells you if a receiver isn't responding and offers to fix it.
+
+### macOS permissions — asked once, never nagged
+
+The app doesn't probe devices at launch. The first time a connection
+actually routes camera/mic to the Mac, macOS shows its standard prompt;
+once granted, the app caches that and never touches the devices again at
+startup. If a bridge later fails (e.g. access was revoked), the cache is
+cleared automatically and **Check Permissions…** re-verifies on demand.
 
 ## Documentation
 

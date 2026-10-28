@@ -8,7 +8,6 @@ from tkinter import ttk, messagebox
 from .. import APP_NAME, secrets, logutil
 from ..connection import ConnectionController, shell_quote_cmd
 from ..deploy import copy_setup_command, deploy_receivers
-from ..paths import IS_MAC
 from ..profiles import ProfileStore, normalize
 from .dialogs import PasswordPrompt
 from .editor import ProfileEditor
@@ -29,8 +28,6 @@ class UbuntuRDPApp:
         self._build_ui()
         self.refresh_list()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-        if IS_MAC:
-            self.root.after(800, self._startup_permission_sweep)
 
     # -- styling -------------------------------------------------------------
 
@@ -280,18 +277,6 @@ class UbuntuRDPApp:
         self.refresh_list()
         self.set_status(f'Deleted {profile["name"]}')
 
-    def _startup_permission_sweep(self):
-        seen_cam = seen_mic = False
-        for p in self.store.profiles:
-            if not seen_cam and p.get("camera") == "host":
-                seen_cam = True
-                self.controller.request_permissions(p)
-            if not seen_mic and p.get("mic") == "host":
-                seen_mic = True
-                self.controller.request_permissions(p)
-            if seen_cam and seen_mic:
-                break
-
     def report_permission_denied(self, profile, problems):
         names = " and ".join(n for n, _ in problems)
         panes = {"Camera": "Privacy_Camera", "Microphone": "Privacy_Microphone"}
@@ -310,8 +295,11 @@ class UbuntuRDPApp:
                              stderr=subprocess.DEVNULL)
 
     def check_permissions(self):
+        """Explicit re-check: forget cached status, then probe for real."""
         profile = self._selected()
         if profile:
+            from ..permissions import reset_permission_cache
+            reset_permission_cache()
             self.controller.request_permissions(profile)
 
     def copy_launch_command(self):

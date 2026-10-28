@@ -23,6 +23,7 @@ import threading
 
 from .exe import find_ffmpeg
 from .logutil import current_log_path
+from .permissions import reset_permission_cache
 
 CAMERA_PORT = 7272
 MIC_PORT = 7273
@@ -227,6 +228,13 @@ class BridgeManager:
         if procmap.get(profile["id"]) is proc:      # race guard: only pop our own
             procmap.pop(profile["id"], None)
         if rc not in (0, 0 - signal.SIGTERM):
+            # Bridge died abnormally — the cached "granted" state may be
+            # stale (e.g. access revoked). Clear it so the next connect
+            # re-probes and macOS can prompt again.
+            if label == "Camera":
+                reset_permission_cache("camera")
+            elif label == "Microphone":
+                reset_permission_cache("microphone")
             self.app.root.after(0, lambda: self.app.set_status(
                 f"{label} bridge stopped (exit {rc}) — is the receiver script "
                 f"running on {profile['host']}? See session log.", error=True))

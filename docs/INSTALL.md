@@ -1,5 +1,23 @@
 # Installation
 
+## One command (both platforms, CLI + GUI from one install)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/YOURORG/UbuntuRDPManagerApp/main/install.sh \
+     -o /tmp/urdm-install.sh && bash /tmp/urdm-install.sh <role>
+```
+
+| Role | Where to run | What it does |
+|---|---|---|
+| `guest` | macOS or Linux | Installs deps, builds the binary/app, installs it — GUI **and** the `urdm` CLI |
+| `host` | Ubuntu/Linux | Runs both receiver installers: deps, systemd services, firewall |
+| `both` | Linux | Guest + host on the same machine |
+| `--uninstall` | either | Reverses the install (best effort) |
+
+The script uses the checkout it lives in when run locally, otherwise it
+clones the repo. Adjust `REPO_URL` at the top of the script (or host your
+own fork's raw URL) before publishing.
+
 ## Client (guest side) — macOS
 
 Requirements: macOS 11+, [Homebrew](https://brew.sh).
@@ -22,11 +40,14 @@ Build without launching: `./build-app.sh --no-open`.
 
 ### macOS permissions
 
-The app requests Camera/Microphone permission itself: at first launch if any
-profile routes those devices locally, and again on any connect that uses
-them. If previously denied, it detects this and offers to open the right
-System Settings pane; right-click a profile → **Check Permissions…** to
-re-check on demand.
+The app never probes devices at launch. Permission is requested by macOS
+the first time a connection routes camera/mic to the Mac; the result is
+cached (`.perm-ok-*` markers in the config dir) so afterwards **nothing
+touches the devices at startup — no prompts, no LED flicker, ever**. If a
+bridge later fails (e.g. access revoked in System Settings), the cache is
+cleared automatically; **Check Permissions…** (profile context menu) forces
+a real re-verify. Note: the permission prompt names the app only when
+running the built `.app` — from Terminal it names *Terminal*.
 
 ## Client (guest side) — Linux
 
