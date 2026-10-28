@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pyflakes
+      - name: Static checks
+        run: python -m pyflakes rdp_manager tests ubuntu_rdp_manager.py
+      - name: Tests
+        run: python -m pytest
+      - name: CLI smoke test
+        run: |
+          python ubuntu_rdp_manager.py --version
+          python ubuntu_rdp_manager.py --list
+
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            cmd: ./build-app.sh --no-open
+          - os: ubuntu-latest
+            cmd: ./build-linux.sh
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: macOS prerequisites
+        if: runner.os == 'macOS'
+        run: brew install tcl-tk
+      - name: Linux prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+      - name: Build
+        run: ${{ matrix.cmd }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-rdp-manager-${{ runner.os }}
+          path: |
+            dist/*.app
+            dist/ubuntu-rdp-manager
