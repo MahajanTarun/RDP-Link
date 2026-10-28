@@ -121,7 +121,7 @@ do_install() {
   mkdir -p "$HOME/.config/systemd/user"
   cat > "$HOME/.config/systemd/user/$SERVICE.service" <<EOF
 [Unit]
-Description=Ubuntu RDP Manager mic receiver (MacMic)
+Description=RDP Link mic receiver (MacMic)
 
 [Service]
 Type=simple

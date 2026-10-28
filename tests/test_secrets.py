@@ -35,7 +35,7 @@ def test_nonascii_password_round_trip():
 def test_legacy_raw_value_read():
     """v3 stored raw ASCII values; store_get must return them as-is."""
     if secrets.IS_MAC:
-        r = secrets._security("add-generic-password", "-s", secrets.BUNDLE_ID,
+        r = secrets._security("add-generic-password", "-s", secrets.SECRET_SERVICE,
                               "-a", "zz-test-legacy", "-w", "rawpw123", "-U")
         assert r is not None and r.returncode == 0
         try:

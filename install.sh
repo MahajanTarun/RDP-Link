@@ -1,8 +1,8 @@
 #!/bin/bash
-# install.sh — one-command installer for Ubuntu RDP Manager.
+# install.sh — one-command installer for RDP Link.
 #
 # Guest (client) + GUI and CLI in one binary/app:
-#   curl -fsSL https://raw.githubusercontent.com/YOURORG/UbuntuRDPManagerApp/main/install.sh -o /tmp/urdm-install.sh
+#   curl -fsSL https://raw.githubusercontent.com/YOURORG/RDP-Link/main/install.sh -o /tmp/urdm-install.sh
 #   bash /tmp/urdm-install.sh guest          # guest on macOS or Linux
 #
 # Host (the Ubuntu machine being connected to):
@@ -12,12 +12,12 @@
 #   ./install.sh guest | host | both | --uninstall
 #
 # After installing the guest you get BOTH interfaces:
-#   macOS:  "Ubuntu RDP Manager" app (GUI)   +  `urdm` command (CLI)
-#   Linux:  `ubuntu-rdp-manager` / `urdm`    (GUI with no args, CLI with args)
+#   macOS:  "RDP Link" app (GUI)   +  `rdplink` command (CLI)
+#   Linux:  `rdp-link` (`rdplink` alias)  GUI with no args, CLI with args
 set -euo pipefail
 
-REPO_URL="https://github.com/YOURORG/UbuntuRDPManagerApp.git"   # adjust for your org
-APP_NAME="Ubuntu RDP Manager"
+REPO_URL="https://github.com/YOURORG/RDP-Link.git"   # adjust for your org
+APP_NAME="RDP Link"
 ROLE="${1:-guest}"
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -49,11 +49,11 @@ do_uninstall() {
   case "$OS" in
     Darwin)
       rm -rf "$HOME/Applications/$APP_NAME.app"
-      $SUDO rm -f /usr/local/bin/urdm /usr/local/bin/ubuntu-rdp-manager
+      $SUDO rm -rf "$HOME/Applications/RDP Link.app"; $SUDO rm -f /usr/local/bin/rdplink /usr/local/bin/urdm
       log "macOS guest uninstalled (brew formulae freerdp/ffmpeg kept)."
       ;;
     Linux)
-      $SUDO rm -f /usr/local/bin/ubuntu-rdp-manager /usr/local/bin/urdm \
+      $SUDO rm -f /usr/local/bin/rdp-link /usr/local/bin/rdplink /usr/local/bin/urdm \
               /usr/local/bin/ubuntu-rdp-camera-receiver
       systemctl --user disable --now ubuntu-rdp-mic-receiver 2>/dev/null || true
       rm -f "$HOME/.config/systemd/user/ubuntu-rdp-mic-receiver.service" \
@@ -69,17 +69,17 @@ install_guest_mac() {
   have brew || die "Homebrew missing — install it from https://brew.sh first"
   log "Installing runtime dependencies (freerdp, ffmpeg)…"
   brew install freerdp ffmpeg
-  log "Building $APP_NAME.app…"
+  log "Building RDP Link.app…"
   (cd "$ROOT" && ./build-app.sh --no-open)
   log "Installing CLI companion (same app binary — GUI if no args)…"
-  $SUDO tee /usr/local/bin/urdm >/dev/null <<EOF
+  $SUDO tee /usr/local/bin/rdplink >/dev/null <<EOF
 #!/bin/bash
 exec "$HOME/Applications/$APP_NAME.app/Contents/MacOS/$APP_NAME" "\$@"
 EOF
   $SUDO chmod +x /usr/local/bin/urdm
   log "Installed ✓"
   echo "    GUI: open '$APP_NAME' (~/Applications) — or Launchpad"
-  echo "    CLI: urdm --list | urdm --connect \"Profile\""
+  echo "    CLI: rdplink --list | rdplink --connect \"Profile\""
 }
 
 install_guest_linux() {
@@ -99,11 +99,12 @@ install_guest_linux() {
   log "Building single-file binary…"
   (cd "$ROOT" && ./build-linux.sh)
   log "Installing to /usr/local/bin (GUI and CLI in one binary)…"
-  $SUDO install -m 0755 "$ROOT/dist/ubuntu-rdp-manager" /usr/local/bin/ubuntu-rdp-manager
-  $SUDO ln -sf /usr/local/bin/ubuntu-rdp-manager /usr/local/bin/urdm
+  $SUDO install -m 0755 "$ROOT/dist/rdp-link" /usr/local/bin/rdp-link
+  $SUDO ln -sf /usr/local/bin/rdp-link /usr/local/bin/rdplink
+  $SUDO ln -sf /usr/local/bin/rdp-link /usr/local/bin/urdm
   log "Installed ✓"
-  echo "    GUI: run 'ubuntu-rdp-manager' (no args)"
-  echo "    CLI: ubuntu-rdp-manager --list | --connect \"Profile\""
+  echo "    GUI: run 'rdplink' (no args)"
+  echo "    CLI: rdplink --list | --connect \"Profile\""
 }
 
 # ---------------------------------------------------------------- host -----

@@ -16,10 +16,10 @@ import os
 import subprocess
 import sys
 
+from . import SECRET_SERVICE
 from .paths import ASKPASS_PATH, SUPPORT_DIR, ensure_dirs
 
 IS_MAC = sys.platform == "darwin"
-BUNDLE_ID = "com.eminentailabs.UbuntuRDPManager"
 
 _SECRETS_FILE = os.path.join(SUPPORT_DIR, "secrets.json")
 _HEX = "hex:"
@@ -77,7 +77,7 @@ def store_set(account, password):
     """Store a password; returns True on success. Stored as hex+prefix."""
     blob = _HEX + password.encode("utf-8").hex()
     if IS_MAC:
-        r = _security("add-generic-password", "-s", BUNDLE_ID, "-a", account,
+        r = _security("add-generic-password", "-s", SECRET_SERVICE, "-a", account,
                       "-w", blob, "-U")
         if r is not None and r.returncode == 0:
             return True
@@ -96,7 +96,7 @@ def store_get(account):
     """Return the password or None."""
     raw = None
     if IS_MAC:
-        r = _security("find-generic-password", "-s", BUNDLE_ID, "-a", account, "-w")
+        r = _security("find-generic-password", "-s", SECRET_SERVICE, "-a", account, "-w")
         if r is not None and r.returncode == 0:
             out = r.stdout.decode("utf-8", "replace")
             raw = out[:-1] if out.endswith("\n") else out
@@ -123,7 +123,7 @@ def store_has(account):
 
 def store_delete(account):
     if IS_MAC:
-        _security("delete-generic-password", "-s", BUNDLE_ID, "-a", account)
+        _security("delete-generic-password", "-s", SECRET_SERVICE, "-a", account)
     _file_write(account, None)
 
 
@@ -142,7 +142,7 @@ case "$VAL" in
          { /usr/bin/xxd -r -p 2>/dev/null || /usr/bin/perl -ne 'print pack("H*", $_)' ; } <<< "$PRINTED" ;;
   *)     print -r -- "$VAL" ;;
 esac
-""" % BUNDLE_ID
+""" % SECRET_SERVICE
     try:
         ensure_dirs()
         with open(ASKPASS_PATH, "w", encoding="utf-8") as f:

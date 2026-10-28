@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Build "Ubuntu RDP Manager.app" from source (macOS).
+# Build "RDP Link.app" from source (macOS).
 # No Xcode required — PyInstaller ad-hoc signs the bundle.
 #
 #   ./build-app.sh             build + install to ~/Applications + launch
@@ -32,8 +32,8 @@ echo "==> Building .app bundle"
   --windowed \
   --noconfirm \
   --clean \
-  --name "Ubuntu RDP Manager" \
-  --osx-bundle-identifier com.eminentailabs.UbuntuRDPManager \
+  --name "RDP Link" \
+  --osx-bundle-identifier com.eminentailabs.rdplink \
   --icon assets/icon.icns \
   --add-data "receiver:receiver" \
   --exclude-module pytest \
@@ -42,26 +42,26 @@ echo "==> Building .app bundle"
   --exclude-module test \
   ubuntu_rdp_manager.py
 
-APP="dist/Ubuntu RDP Manager.app"
+APP="dist/RDP Link.app"
 [[ -d "$APP" ]] || { echo "Build failed: $APP not found"; exit 1; }
 
 # Info.plist extras: minimum OS + camera/mic usage descriptions so macOS
 # shows proper TCC permission prompts attributed to this app.
 PLIST="$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 11.0" "$PLIST" 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string \"Ubuntu RDP Manager sends your microphone to the remote session when microphone redirection is enabled.\"" "$PLIST" 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string \"Ubuntu RDP Manager can stream your camera to the remote machine when the camera bridge is enabled.\"" "$PLIST" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string \"RDP Link sends your microphone to the remote session when microphone redirection is enabled.\"" "$PLIST" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string \"RDP Link can stream your camera to the remote machine when the camera bridge is enabled.\"" "$PLIST" 2>/dev/null || true
 
 # Re-sign after editing Info.plist so the signature matches its contents.
 /usr/bin/codesign --force --deep --sign - "$APP"
 
 mkdir -p "$HOME/Applications"
-rm -rf "$HOME/Applications/Ubuntu RDP Manager.app"
+rm -rf "$HOME/Applications/RDP Link.app"
 cp -R "$APP" "$HOME/Applications/"
-echo "Installed: $HOME/Applications/Ubuntu RDP Manager.app"
+echo "Installed: $HOME/Applications/RDP Link.app"
 
 if [[ $NO_OPEN == 1 ]]; then
   echo "(--no-open: skipping launch)"
 else
-  open "$HOME/Applications/Ubuntu RDP Manager.app"
+  open "$HOME/Applications/RDP Link.app"
 fi

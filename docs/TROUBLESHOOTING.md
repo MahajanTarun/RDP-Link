@@ -72,9 +72,9 @@ permission prompt (first use only) is the OS's, not ours.
 ## CLI diagnostics
 
 ```sh
-ubuntu-rdp-manager --list                       # profiles + state
-ubuntu-rdp-manager --connect "MolCon Wired"     # headless connect
-tail -f "$HOME/Library/Application Support/Ubuntu RDP Manager/logs/"session-*.log
+rdp-link --list                       # profiles + state
+rdp-link --connect "MolCon Wired"     # headless connect
+tail -f "$HOME/Library/Application Support/RDP Link/logs/"session-*.log
 ```
 
 ## Receiver service management (on the host)

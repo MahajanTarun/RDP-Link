@@ -1,45 +1,52 @@
-# 🖥 Ubuntu RDP Manager
+# 🔗 RDP Link
 
-**A lightweight, open-source RDP launcher for macOS and Linux with full device
-redirection** — audio, microphone, camera, clipboard and file transfer — so a
+**Lightweight remote access.**
+*Open source · Fast · Minimal*
+
+A thin, open-source RDP launcher for macOS and Linux with full device
+redirection — audio, microphone, camera, clipboard and file transfer — so a
 Teams/Zoom call inside a remote Ubuntu session uses your local hardware.
 
 Powered by FreeRDP. The GUI is a thin launcher with **zero runtime
-dependencies beyond Python/Tk** — connecting through the app feels exactly
+dependencies beyond Python/Tk** — connecting through RDP Link feels exactly
 like launching `sdl-freerdp` yourself, minus the typing.
 
 ```
 ┌─────────────────────┐        RDP (xrdp)         ┌──────────────────────┐
-│  Mac / Linux client │◄─────────────────────────►│  Ubuntu host          │
-│  ─────────────────  │   screen, keys, clipboard  │  ──────────────────  │
-│  your speakers  ◄───│──────────── /sound ────────│── remote audio        │
-│  your mic      ────►│──── ffmpeg UDP 7273 ──────►│── "MacMic" source     │
-│  your camera   ────►│──── ffmpeg UDP 7272 ──────►│── "MacCamera" webcam  │
-│  your files    ◄───►│──── /drive + /clipboard ──►│── copy/paste, files   │
-└─────────────────────┘                            └──────────────────────┘
+│  Mac / Linux client │◄─────────────────────────►│  Ubuntu host         │
+│  ─────────────────  │   screen, keys, clipboard │  ──────────────────  │
+│  your speakers  ◄───│──────────── /sound ───────│── remote audio       │
+│  your mic      ────►│──── ffmpeg UDP 7273 ─────►│── "MacMic" source    │
+│  your camera   ────►│──── ffmpeg UDP 7272 ─────►│── "MacCamera" webcam │
+│  your files    ◄───►│──── /drive + /clipboard ─►│── copy/paste, files  │
+└─────────────────────┘                           └──────────────────────┘
          receivers installed by the app over SSH in one click
 ```
 
-## Highlights (v4)
+> Previously "Ubuntu RDP Manager" — same engine, new name. Existing
+> profiles and saved passwords migrate automatically on first run.
+
+## Highlights (v4.2)
 
 - **Per-device routing** — speaker / mic / camera each route to *this
   computer* or stay on the *remote PC*, per profile.
 - **Direct connect** — saved passwords are piped to FreeRDP via stdin;
   double-click connects with no prompts. Passwords never appear on the
-  command line and are stored in the macOS Keychain (or a secret service /
-  0600 file on Linux).
+  command line.
 - **Receiver handshake** — the app pings the host's receiver service and
   tells you *"receiver detected ✓"* or *"no response — set up receivers?"*
   instead of silently streaming into the void.
 - **One-click host setup** — *Set up receivers on host…* pushes and installs
-  both receiver **systemd services** over SSH in a terminal window
+  both receiver **systemd services** over SSH in one terminal window
   (`sudo` password may be asked once). Survives reboots.
 - **Native mic option** — for xrdp 0.10+ hosts, use raw RDP `/microphone`
   redirection instead of the bridge.
+- **Permissions asked once** — no device probing at launch; macOS prompts
+  only on first actual use, then it's cached forever until revoked.
 - **Full session log** — every FreeRDP/bridge warning lands in a session log,
   one menu click away.
-- **CLI mode** — `ubuntu-rdp-manager --connect "Name"` connects without
-  opening the GUI at all.
+- **CLI mode** — `rdp-link --connect "Name"` connects without opening the
+  GUI at all.
 - **Cross-platform** — client runs on macOS and Linux; hosts are any Linux
   box running xrdp.
 
@@ -48,13 +55,14 @@ like launching `sdl-freerdp` yourself, minus the typing.
 ### One command (macOS and Linux)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/YOURORG/UbuntuRDPManagerApp/main/install.sh \
-     -o /tmp/urdm-install.sh && bash /tmp/urdm-install.sh guest
+curl -fsSL https://raw.githubusercontent.com/YOURORG/RDP-Link/main/install.sh \
+     -o /tmp/rdplink-install.sh && bash /tmp/rdplink-install.sh guest
 ```
 
-(This installs the **guest/client** — both the GUI and the `urdm` CLI, from
-the same binary. Run `bash /tmp/urdm-install.sh host` on the Ubuntu machine
-to install the receiver services there. Other roles: `both`, `--uninstall`.)
+(This installs the **guest/client** — both the GUI and the `rdplink` CLI,
+from the same binary. Run `bash /tmp/rdplink-install.sh host` on the Ubuntu
+machine to install the receiver services there. Other roles: `both`,
+`--uninstall`.)
 
 ### Manual (macOS guest)
 ```sh
@@ -65,7 +73,7 @@ brew bundle --file=Brewfile          # freerdp + ffmpeg
 ### Manual (Linux guest)
 ```sh
 sudo apt install freerdp3-x11 ffmpeg python3-tk   # or freerdp2-x11
-./build-linux.sh                     # produces dist/ubuntu-rdp-manager
+./build-linux.sh                     # produces dist/rdp-link
 ```
 
 ### Or straight from source (both platforms)
@@ -105,11 +113,23 @@ cleared automatically and **Check Permissions…** re-verifies on demand.
 
 ## Profiles
 
-Profiles live in `~/Library/Application Support/Ubuntu RDP Manager/profiles.json`
-(macOS) or `~/.config/ubuntu-rdp-manager/profiles.json` (Linux), and are
-backward-compatible with v1–v3 files — old boolean device flags migrate
-automatically.
+Profiles live in `~/Library/Application Support/RDP Link/profiles.json`
+(macOS) or `~/.config/rdp-link/profiles.json` (Linux). Installs from before
+the rename ("Ubuntu RDP Manager") are migrated automatically on first run,
+so old profiles and passwords carry over untouched.
+
+## CLI
+
+```sh
+rdp-link --list                      # profiles + connection state
+rdp-link --connect "MolCon Wired"    # headless connect (no GUI)
+rdp-link --version
+```
+
+macOS guests also get a `rdplink` alias for the same thing after
+`./build-app.sh`.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Contributions welcome!
+MIT — see [LICENSE](LICENSE). Contributions welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md).

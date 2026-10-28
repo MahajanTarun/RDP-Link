@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping make Ubuntu RDP Manager better!
+Thanks for helping make RDP Link better!
 
 ## Ground rules
 

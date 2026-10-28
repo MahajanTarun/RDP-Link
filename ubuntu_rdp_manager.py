@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ubuntu RDP Manager — entry point.
+"""RDP Link — entry point.
 
 GUI mode:      python3 ubuntu_rdp_manager.py
 CLI mode:      python3 ubuntu_rdp_manager.py --list
@@ -17,7 +17,7 @@ from rdp_manager import __version__
 def _cli(argv):
     """Handle --list / --connect / --version without importing tkinter."""
     if "--version" in argv or "-V" in argv:
-        print(f"Ubuntu RDP Manager {__version__}")
+        print(f"RDP Link {__version__}")
         return 0
     from rdp_manager.profiles import ProfileStore
     store = ProfileStore()

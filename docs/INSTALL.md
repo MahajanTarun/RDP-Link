@@ -3,7 +3,7 @@
 ## One command (both platforms, CLI + GUI from one install)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/YOURORG/UbuntuRDPManagerApp/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/YOURORG/RDP-Link/main/install.sh \
      -o /tmp/urdm-install.sh && bash /tmp/urdm-install.sh <role>
 ```
 
@@ -20,6 +20,9 @@ own fork's raw URL) before publishing.
 
 ## Client (guest side) — macOS
 
+> Renamed from "Ubuntu RDP Manager": existing installs migrate their
+> profiles on first run; the old directory is left untouched.
+
 Requirements: macOS 11+, [Homebrew](https://brew.sh).
 
 ```sh
@@ -32,7 +35,7 @@ The build:
   Gatekeeper accepts for locally built apps),
 - adds `NSCameraUsageDescription` / `NSMicrophoneUsageDescription` to
   Info.plist and re-signs — this is what makes macOS show proper Camera /
-  Microphone permission prompts attributed to **Ubuntu RDP Manager**
+  Microphone permission prompts attributed to **RDP Link**
   (running from source instead attributes prompts to *Terminal*),
 - generates the icon via `tools/gen_icon.py` if missing.
 
@@ -57,7 +60,7 @@ Requirements: Tk (`python3-tk`), FreeRDP 3 (`freerdp3-x11` on Ubuntu 24.04+;
 ```sh
 sudo apt install -y freerdp3-x11 ffmpeg python3-tk
 ./build-linux.sh
-./dist/ubuntu-rdp-manager
+./dist/rdp-link
 ```
 
 The Linux build is a single self-contained executable. On other distros use

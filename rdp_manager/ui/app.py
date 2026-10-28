@@ -63,11 +63,11 @@ class UbuntuRDPApp:
         header.pack(fill="x")
         title_box = ttk.Frame(header)
         title_box.pack(side="left")
-        ttk.Label(title_box, text="🖥  RDP Manager",
+        ttk.Label(title_box, text="🔗  RDP Link",
                   font=("TkDefaultFont", 22, "bold")).pack(anchor="w")
         ttk.Label(title_box,
-                  text="Audio, mic, camera, clipboard & files — routed per "
-                       "connection", foreground="#777").pack(anchor="w")
+                  text="Lightweight remote access",
+                  foreground="#777").pack(anchor="w")
         ttk.Button(header, text="＋  Add", command=self.add_profile,
                    style="Accent.TButton").pack(side="right")
 

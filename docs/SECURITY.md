@@ -2,7 +2,9 @@
 
 ## Passwords
 - macOS: stored in the login **Keychain** under service
-  `com.eminentailabs.UbuntuRDPManager`, keyed by profile ID.
+  `com.eminentailabs.UbuntuRDPManager`, keyed by profile ID. This is the
+  pre-rename service name, kept deliberately so passwords survive the
+  "Ubuntu RDP Manager" → "RDP Link" rename without migration.
 - Linux: stored via `secret-tool` (libsecret) when available; otherwise a
   `0600` JSON file in the config dir (documented plaintext fallback — check
   `docs/INSTALL.md`).

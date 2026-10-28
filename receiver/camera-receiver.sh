@@ -164,7 +164,7 @@ do_install() {
   echo "Installing systemd service (system level — needs root for the kernel module)…"
   $SUDO tee "/etc/systemd/system/$SERVICE.service" >/dev/null <<EOF
 [Unit]
-Description=Ubuntu RDP Manager camera receiver (MacCamera)
+Description=RDP Link camera receiver (MacCamera)
 After=network.target
 
 [Service]

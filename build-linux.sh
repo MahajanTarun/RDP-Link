@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build a Linux binary: dist/ubuntu-rdp-manager (single executable).
+# Build a Linux binary: dist/rdp-link (single executable).
 # Requirements: python3-tk (Tk), pip install pyinstaller
 #
 #   ./build-linux.sh
@@ -19,7 +19,7 @@ fi
   --onefile \
   --noconfirm \
   --clean \
-  --name ubuntu-rdp-manager \
+  --name rdp-link \
   --add-data "receiver:receiver" \
   --exclude-module pytest \
   --exclude-module unittest \
@@ -27,7 +27,7 @@ fi
   --exclude-module test \
   ubuntu_rdp_manager.py
 
-echo "Built: dist/ubuntu-rdp-manager"
-echo "Run:   ./dist/ubuntu-rdp-manager            (GUI)"
-echo "       ./dist/ubuntu-rdp-manager --list      (list profiles)"
-echo "       ./dist/ubuntu-rdp-manager --connect 'Name'"
+echo "Built: dist/rdp-link"
+echo "Run:   ./dist/rdp-link            (GUI)"
+echo "       ./dist/rdp-link --list      (list profiles)"
+echo "       ./dist/rdp-link --connect 'Name' | --list | --version"
