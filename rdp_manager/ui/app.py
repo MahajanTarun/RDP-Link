@@ -76,6 +76,33 @@ class UbuntuRDPApp:
 
         ttk.Separator(outer).pack(fill="x", pady=(14, 10))
 
+        # Reserve the bottom bar BEFORE packing the list: the footer is
+        # anchored to the window's bottom edge, so the status bar and buttons
+        # stay visible at any window size — the list shrinks instead of
+        # pushing them off-screen.
+        footer = ttk.Frame(outer)
+        footer.pack(side="bottom", fill="x")
+        ttk.Separator(outer).pack(side="bottom", fill="x", pady=(10, 10))
+        self._dot_canvas = tk.Canvas(footer, width=10, height=10,
+                                     highlightthickness=0)
+        self._dot_canvas.pack(side="left")
+        self._dot = self._dot_canvas.create_oval(1, 1, 9, 9, fill="#2ecc71",
+                                                 outline="")
+        ttk.Label(footer, textvariable=self._status_var,
+                  foreground="#555").pack(side="left", padx=(6, 12))
+
+        self._edit_btn = ttk.Button(footer, text="Edit…",
+                                    command=self.edit_profile)
+        self._edit_btn.pack(side="right")
+        self._disconnect_all_btn = ttk.Button(footer, text="Disconnect All",
+                                              style="Danger.TButton",
+                                              command=self.disconnect_all)
+        self._disconnect_all_btn.pack(side="right", padx=(0, 8))
+        self._connect_btn = ttk.Button(footer, text="Connect",
+                                       style="Accent.TButton",
+                                       command=self.toggle_selected)
+        self._connect_btn.pack(side="right", padx=(0, 8))
+
         cols = ("name", "target", "routing", "state")
         self.tree = ttk.Treeview(outer, columns=cols, show="headings",
                                  selectmode="browse")
@@ -97,30 +124,6 @@ class UbuntuRDPApp:
         self.tree.bind("<Button-2>", self._on_context)
         self.tree.bind("<Button-3>", self._on_context)
         self.tree.bind("<<TreeviewSelect>>", lambda e: self._update_buttons())
-
-        ttk.Separator(outer).pack(fill="x", pady=(10, 10))
-
-        footer = ttk.Frame(outer)
-        footer.pack(fill="x")
-        self._dot_canvas = tk.Canvas(footer, width=10, height=10,
-                                     highlightthickness=0)
-        self._dot_canvas.pack(side="left")
-        self._dot = self._dot_canvas.create_oval(1, 1, 9, 9, fill="#2ecc71",
-                                                 outline="")
-        ttk.Label(footer, textvariable=self._status_var,
-                  foreground="#555").pack(side="left", padx=(6, 12))
-
-        self._edit_btn = ttk.Button(footer, text="Edit…",
-                                    command=self.edit_profile)
-        self._edit_btn.pack(side="right")
-        self._disconnect_all_btn = ttk.Button(footer, text="Disconnect All",
-                                              style="Danger.TButton",
-                                              command=self.disconnect_all)
-        self._disconnect_all_btn.pack(side="right", padx=(0, 8))
-        self._connect_btn = ttk.Button(footer, text="Connect",
-                                       style="Accent.TButton",
-                                       command=self.toggle_selected)
-        self._connect_btn.pack(side="right", padx=(0, 8))
 
         self._menu = tk.Menu(self.root, tearoff=0)
         self._menu.add_command(label="Connect / Disconnect",
