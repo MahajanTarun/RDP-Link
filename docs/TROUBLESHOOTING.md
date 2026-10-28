@@ -15,6 +15,11 @@ line (bottom bar), details land in the session log
 
 ## Symptom → fix matrix
 
+### Session "extends" instead of showing the same screen
+Port 3389 creates a new virtual session; the same-screen console listener
+lives on 3390 in typical setups. Edit the profile's port — full guide:
+**[SAME-SCREEN.md](SAME-SCREEN.md)**.
+
 ### No remote sound
 `pulseaudio-module-xrdp` / `pipewire-module-xrdp` missing on the host.
 Install and re-login to the RDP session.

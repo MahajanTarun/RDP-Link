@@ -99,6 +99,7 @@ cleared automatically and **Check Permissions…** re-verifies on demand.
 |---|---|
 | [docs/INSTALL.md](docs/INSTALL.md) | Detailed install/build for macOS, Linux and source; what the receiver installer does |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Symptom → fix matrix, diagnostics, logs |
+| [docs/SAME-SCREEN.md](docs/SAME-SCREEN.md) | Port 3390 (same screen / console) vs 3389 (new virtual session) — how to choose, configure and secure |
 | [docs/SECURITY.md](docs/SECURITY.md) | Where secrets live, how streams are protected, hardening options |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Architecture, module map, tests, release checklist |
 
