@@ -9,7 +9,7 @@ from .. import APP_NAME, secrets, logutil
 from ..connection import ConnectionController, shell_quote_cmd
 from ..deploy import copy_setup_command, deploy_receivers
 from ..paths import IS_MAC
-from ..profiles import ProfileStore
+from ..profiles import ProfileStore, normalize
 from .dialogs import PasswordPrompt
 from .editor import ProfileEditor
 
@@ -245,8 +245,7 @@ class UbuntuRDPApp:
                           status_cb=self.set_status)
 
     def _on_editor_save(self, saved, password, connect_now):
-        saved = ProfileStore and __import__("rdp_manager.profiles",
-                                            fromlist=["normalize"]).normalize(saved)
+        saved = normalize(saved)
         existed = self.store.find(saved["id"]) is not None
         self.store.upsert(saved)
 
