@@ -161,6 +161,20 @@ class BridgeManager:
 
     # -- lifecycle ---------------------------------------------------------
 
+    def start(self, profile):
+        """Start the bridges this profile needs and schedule the receiver
+        handshake. Returns True when everything spawned."""
+        pid = profile["id"]
+        ok = True
+        if profile.get("camera") == "host":
+            ok = self.start_camera(profile)
+        if ok and profile.get("mic") == "host":
+            ok = self.start_mic(profile)
+        if ok:
+            self._recv_ok[pid] = None
+            self.schedule_health(profile, delay=2500, announce=True)
+        return ok
+
     def stop(self, profile_id):
         self._terminate(self.camera_procs.pop(profile_id, None))
         self._terminate(self.mic_procs.pop(profile_id, None))

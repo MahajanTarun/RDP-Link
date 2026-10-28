@@ -102,12 +102,8 @@ class ConnectionController:
             env["FREERDP_ASKPASS"] = ASKPASS_PATH
             env["RDP_PROFILE_ID"] = pid
 
-        if profile.get("camera") == "host":
-            if not self.bridges.start_camera(profile):
-                return
-        if profile.get("mic") == "host":
-            if not self.bridges.start_mic(profile):
-                self.bridges.stop(pid)
+        if profile.get("camera") == "host" or profile.get("mic") == "host":
+            if not self.bridges.start(profile):
                 return
 
         stdin = subprocess.PIPE if use_stdin else subprocess.DEVNULL
