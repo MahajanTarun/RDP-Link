@@ -1,0 +1,24 @@
+[project]
+name = "ubuntu-rdp-manager"
+version = "4.0.0"
+description = "Cross-platform RDP connection manager with camera, microphone, audio and clipboard redirection to Linux hosts"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+keywords = ["rdp", "freerdp", "xrdp", "remote-desktop", "camera", "microphone", "teams"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: MacOS X",
+    "Environment :: X11 Applications",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Communications :: Conferencing",
+    "Topic :: System :: Networking",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
