@@ -28,6 +28,10 @@ class UbuntuRDPApp:
         self._build_ui()
         self.refresh_list()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        # Warm the keyboard-layout cache in the background so the connect
+        # path never blocks on 'defaults read'/'setxkbmap'.
+        from ..keyboard import warmup
+        warmup()
 
     # -- styling -------------------------------------------------------------
 

@@ -126,6 +126,28 @@ class ProfileEditor(tk.Toplevel):
                                  "enables file copy/paste)",
                         variable=self._files_var).pack(anchor="w", pady=(4, 0))
 
+        # ---- Keyboard ------------------------------------------------------
+        kb = ttk.LabelFrame(outer, text=" Keyboard ", padding=12)
+        kb.pack(fill="x", pady=(12, 0))
+        from ..keyboard import choices
+        kbvalues = choices()
+        current = str(profile.get("keyboard", "auto"))
+        display = ("Auto-detect (current Mac layout)" if current == "auto"
+                   else next((lab for v, lab in kbvalues if v == current), None))
+        if display is None:            # stale/unknown stored value
+            current, display = "auto", "Auto-detect (current Mac layout)"
+        self._kb_var = tk.StringVar(value=display)
+        labels = [lab for _, lab in kbvalues]
+        ttk.Combobox(kb, textvariable=self._kb_var, state="readonly",
+                     width=34,
+                     values=["Auto-detect (current Mac layout)"] + labels
+                     ).grid(row=0, column=0, sticky="w")
+        ttk.Label(kb, foreground="#888",
+                  text="Auto-detect sends your currently selected keyboard "
+                       "layout (US, German, …) to the remote session at "
+                       "login. Applies at session start."
+                  ).grid(row=1, column=0, sticky="w", pady=(6, 0))
+
         # ---- Password ------------------------------------------------------
         pw = ttk.LabelFrame(outer, text=" Password ", padding=12)
         pw.pack(fill="x", pady=(12, 0))
@@ -196,6 +218,14 @@ class ProfileEditor(tk.Toplevel):
         self.profile["clipboard"] = bool(self._clip_var.get())
         self.profile["fileTransfer"] = bool(self._files_var.get())
         self.profile["savePassword"] = bool(self._save_pw_var.get())
+        current_label = self._kb_var.get()
+        if current_label.startswith("Auto-detect"):
+            self.profile["keyboard"] = "auto"
+        else:
+            from ..keyboard import choices
+            value = next((v for v, lab in choices()
+                          if lab == current_label), "auto")
+            self.profile["keyboard"] = value
         return self._pw_var.get() or None
 
     def _save(self):

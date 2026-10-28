@@ -41,6 +41,9 @@ like launching `sdl-freerdp` yourself, minus the typing.
   (`sudo` password may be asked once). Survives reboots.
 - **Native mic option** — for xrdp 0.10+ hosts, use raw RDP `/microphone`
   redirection instead of the bridge.
+- **Keyboard auto-detect** — your currently selected Mac/Linux keyboard
+  layout is sent to the session automatically (`/kbd:layout`), per profile
+  overridable.
 - **Permissions asked once** — no device probing at launch; macOS prompts
   only on first actual use, then it's cached forever until revoked.
 - **Full session log** — every FreeRDP/bridge warning lands in a session log,

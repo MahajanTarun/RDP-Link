@@ -30,12 +30,15 @@ def sanitize_port(port):
     return port if port.isdigit() and 0 < int(port) < 65536 else "3389"
 
 
-def build_args(profile, stdin_pass=False, home=None):
+def build_args(profile, stdin_pass=False, home=None, kbd_layout=None):
     """FreeRDP flags for a profile (executable not included).
-    No password ever appears here."""
+    No password ever appears here. `kbd_layout` ('0x409') comes from
+    rdp_manager.keyboard.resolve_for_connect()."""
     home = home or os.path.expanduser("~")
     args = [f"/v:{format_host(profile['host'])}:{sanitize_port(profile['port'])}",
             f"/u:{profile['username']}"]
+    if kbd_layout:
+        args.append(f"/kbd:layout:{kbd_layout}")
     if profile.get("smartSizing", True):
         args.append("/smart-sizing")
     if profile.get("audio") == "host":
@@ -53,10 +56,11 @@ def build_args(profile, stdin_pass=False, home=None):
     return args
 
 
-def shell_quote_cmd(exe, profile, stdin_pass=False):
+def shell_quote_cmd(exe, profile, stdin_pass=False, kbd_layout=None):
     """Copy-pasteable command (password placeholder, never the real one)."""
     import shlex
-    parts = [exe] + build_args(profile, stdin_pass=stdin_pass)
+    parts = [exe] + build_args(profile, stdin_pass=stdin_pass,
+                               kbd_layout=kbd_layout)
     quoted = " ".join(shlex.quote(p) for p in parts)
     if stdin_pass:
         quoted = f"printf '%s\\n' 'YOUR_PASSWORD' | {quoted}"
@@ -96,7 +100,11 @@ class ConnectionController:
             password = secrets.store_get(pid)
         use_stdin = password is not None and profile.get("stdinPass", True)
 
-        args = [exe] + build_args(profile, stdin_pass=use_stdin)
+        # Keyboard: resolve the layout (cached auto-detect or fixed value)
+        from .keyboard import resolve_for_connect
+        kbd = resolve_for_connect(profile)
+
+        args = [exe] + build_args(profile, stdin_pass=use_stdin, kbd_layout=kbd)
         env = dict(os.environ)
         if password is not None and os.access(ASKPASS_PATH, os.X_OK):
             env["FREERDP_ASKPASS"] = ASKPASS_PATH

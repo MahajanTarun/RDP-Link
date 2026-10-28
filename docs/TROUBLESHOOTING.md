@@ -52,6 +52,16 @@ video devices only; use *Refresh* and pick your camera (e.g.
 `0 — MacBook Pro Camera`), then *Test…*. Capture parameters are fixed at
 1280x720@30 uyvy422 — the modes this camera family supports.
 
+### Wrong keyboard layout in the session
+(default behaviour sends your Mac's currently selected layout via
+`/kbd:layout`). Most xrdp Xorg sessions accept it at login. If the layout
+still mismatches:
+- set the profile's **Keyboard** to the exact layout instead of Auto-detect;
+- xrdp 0.9 sessions may have a saved GNOME layout that overrides the
+  client's — check Settings → Keyboard on the remote once;
+- ⌘ Cmd maps to the remote *Super* key — GNOME-specific quirks (like
+  Cmd+Space not opening remote Spotlight) are expected, not bugs.
+
 ### Saved password doesn't connect
 Toggle **stdin pass** handling per profile by editing the profile: v4 pipes
 the password via `/from-stdin`. If a particular FreeRDP build ignores it,

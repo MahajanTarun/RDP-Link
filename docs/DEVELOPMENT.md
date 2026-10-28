@@ -18,6 +18,7 @@ rdp_manager/            the package
 ├── paths.py            platform paths, resource lookup
 ├── exe.py              FreeRDP / ffmpeg discovery
 ├── profiles.py         store + schema migration (v1→v4)
+├── keyboard.py         client layout auto-detect -> /kbd:layout:<id>
 ├── secrets.py          Keychain / secret-tool / file + hex scheme + askpass
 ├── permissions.py      macOS TCC probing (no-op on Linux)
 ├── bridges.py          camera/mic bridges, receiver handshake, health loop

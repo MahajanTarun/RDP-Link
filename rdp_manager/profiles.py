@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import uuid
 
 from .paths import PROFILES_FILE, ensure_dirs
@@ -30,6 +31,7 @@ DEFAULTS = {
     "fileTransfer": True,
     "stdinPass": True,
     "certTofu": True,
+    "keyboard": "auto",
 }
 
 
@@ -67,6 +69,9 @@ def normalize(p):
         if p.get(key) is None:
             p[key] = val
         p.setdefault(key, val)
+    if not (p["keyboard"] == "auto"
+            or re.fullmatch(r"0x[0-9A-Fa-f]+", str(p["keyboard"]))):
+        p["keyboard"] = "auto"
     for key, allowed in ROUTES.items():
         if p[key] in allowed:
             continue
