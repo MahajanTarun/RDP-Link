@@ -134,6 +134,8 @@ class UbuntuRDPApp:
                                command=self.copy_launch_command)
         self._menu.add_command(label="Set up receivers on host…",
                                command=self.setup_host_receivers)
+        self._menu.add_command(label="Stop camera & mic now",
+                               command=self.stop_device_streaming)
         self._menu.add_command(label="Show session log",
                                command=logutil.open_log)
         self._menu.add_command(label="Check Permissions…",
@@ -193,13 +195,17 @@ class UbuntuRDPApp:
         for p in self.store.profiles:
             active = self.controller.is_active(p["id"])
             pw = "🔑 " if p.get("savePassword") and secrets.store_has(p["id"]) else ""
+            state = "● Connected" if active else ""
+            chips = self.controller.bridges.device_chips(p["id"])
+            if chips:
+                state = f"{state} {chips}".strip()
             self.tree.insert("", "end", iid=p["id"],
                              tags=("connected",) if active else (),
                              values=(
                 f'{pw}{p["name"]}',
                 f'{p["username"]}  •  {p["host"]}:{p["port"]}',
                 self._routing_summary(p),
-                "● Connected" if active else "",
+                state,
             ))
         if selected and selected[0] in self.tree.get_children():
             self.tree.selection_set(selected[0])
@@ -337,6 +343,25 @@ class UbuntuRDPApp:
     def disconnect_all(self):
         self.controller.disconnect_all()
         self.set_status("Disconnecting all…")
+
+    def stop_device_streaming(self):
+        """Instant privacy off-switch: kill camera/mic bridges but keep the
+        session open."""
+        profile = self._selected()
+        if not profile:
+            return
+        pid = profile["id"]
+        was_cam = self.controller.bridges.camera_procs.get(pid) is not None
+        was_mic = self.controller.bridges.mic_procs.get(pid) is not None
+        self.controller.bridges.stop(pid)
+        self.refresh_list()
+        if was_cam or was_mic:
+            self.set_status(f"Stopped {'camera' if was_cam else ''}"
+                            f"{' & ' if was_cam and was_mic else ''}"
+                            f"{'microphone' if was_mic else ''} streaming — "
+                            f"session stays open (reconnect to re-enable)")
+        else:
+            self.set_status("No device streaming active for this profile")
 
     def _on_close(self):
         self.controller.disconnect_all()

@@ -24,6 +24,7 @@ import threading
 from .exe import find_ffmpeg
 from .logutil import current_log_path
 from .permissions import reset_permission_cache
+from . import watchdog
 
 CAMERA_PORT = 7272
 MIC_PORT = 7273
@@ -193,6 +194,18 @@ class BridgeManager:
         return any(p.poll() is None for p in
                    list(self.camera_procs.values()) + list(self.mic_procs.values()))
 
+    def device_chips(self, profile_id):
+        """Streaming indicator for the profile list: '🎥 🎤' while the
+        bridges are live so it's always obvious what holds the hardware."""
+        chips = ""
+        cam = self.camera_procs.get(profile_id)
+        mic = self.mic_procs.get(profile_id)
+        if cam is not None and cam.poll() is None:
+            chips = "🎥"
+        if mic is not None and mic.poll() is None:
+            chips = f"{chips} 🎤".strip() if chips else "🎤"
+        return chips
+
     # -- process helpers -----------------------------------------------------
 
     @staticmethod
@@ -227,7 +240,10 @@ class BridgeManager:
         rc = proc.wait()
         if procmap.get(profile["id"]) is proc:      # race guard: only pop our own
             procmap.pop(profile["id"], None)
-        if rc not in (0, 0 - signal.SIGTERM):
+        # clean exits: 0 = ffmpeg ended, -15 = direct SIGTERM, 143 = wrapper
+        # forwarded SIGTERM, 99 = watchdog killed it (app died), 130 = ^C
+        clean = {0, -signal.SIGTERM, 128 + signal.SIGTERM, 99, -2, 130}
+        if rc not in clean:
             # Bridge died abnormally — the cached "granted" state may be
             # stale (e.g. access revoked). Clear it so the next connect
             # re-probes and macOS can prompt again.
@@ -267,9 +283,12 @@ class BridgeManager:
 
     def _spawn(self, label, args, profile, procmap):
         try:
-            proc = subprocess.Popen(args, stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.PIPE, text=True,
-                                    bufsize=1)
+            # Spawned under the parent-death watchdog: if the app dies by
+            # any means (incl. SIGKILL), the bridge self-terminates within
+            # ~1s instead of orphaning with the camera/mic still live.
+            proc = watchdog.spawn(args, stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.PIPE, text=True,
+                                  bufsize=1)
         except OSError as e:
             self.app.set_status(f"Couldn't start {label.lower()} bridge: {e}",
                                 error=True)

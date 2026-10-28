@@ -1,5 +1,21 @@
 # Security notes
 
+## When is your camera/mic on? (plain-language guarantee)
+
+- **While a session is connected**: if the profile routes camera/mic to this
+  Mac and the session is live, the corresponding ffmpeg bridge runs and the
+  macOS indicator (green dot / 🎥 chip in the app's profile list) shows it.
+  Closing the FreeRDP window or the session stops both within ~1 second.
+- **A session you can't see is still a session**: minimise it on another
+  Space and it keeps streaming. Profile list chips (🎥 camera, 🎤 mic) and
+  the right-click **Stop camera & mic now** action are there for that.
+- **Orphaned processes are impossible**: every bridge and permission probe
+  runs under a parent-death watchdog. If the app is force-quit
+  (Option+⌘+Esc) or crashes, the watchdog kills the device processes within
+  a second. Losing the app never kills your remote desktop itself (by
+  choice — your session survives app crashes; it just stops streaming
+  devices).
+
 ## Passwords
 - macOS: stored in the login **Keychain** under service
   `com.eminentailabs.UbuntuRDPManager`, keyed by profile ID. This is the

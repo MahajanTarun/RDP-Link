@@ -46,6 +46,10 @@ like launching `sdl-freerdp` yourself, minus the typing.
   overridable.
 - **Permissions asked once** — no device probing at launch; macOS prompts
   only on first actual use, then it's cached forever until revoked.
+- **Camera guaranteed off with the app** — bridges run under a parent-death
+  watchdog: crash or force-quit kills the camera/mic feed within ~1 s, no
+  orphans possible; per-profile 🎥/🎤 streaming indicators plus a
+  "Stop camera & mic now" action keep you in control even mid-session.
 - **Full session log** — every FreeRDP/bridge warning lands in a session log,
   one menu click away.
 - **CLI mode** — `rdp-link --connect "Name"` connects without opening the

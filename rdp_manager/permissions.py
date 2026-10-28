@@ -71,9 +71,11 @@ atexit.register(_kill_inflight)
 
 
 def _run_probe(args, timeout):
-    """subprocess.run that also registers the child for atexit cleanup."""
-    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL,
-                            stderr=subprocess.PIPE, text=True)
+    """Run a probe under the parent-death watchdog, then register it for
+    atexit cleanup. Returns (rc, stderr) or (None, 'timed out')."""
+    from . import watchdog
+    proc = watchdog.spawn(args, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.PIPE, text=True)
     _inflight.add(proc)
     try:
         _, err = proc.communicate(timeout=timeout)

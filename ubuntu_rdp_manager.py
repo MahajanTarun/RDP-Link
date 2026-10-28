@@ -9,6 +9,7 @@ CLI mode avoids loading the GUI entirely and connects immediately —
 behaves like launching raw sdl-freerdp yourself.
 """
 
+import os
 import sys
 
 from rdp_manager import __version__
@@ -55,6 +56,17 @@ def _cli(argv):
 
 def main():
     argv = sys.argv[1:]
+    # Device watchdog mode: never load the GUI, spawn & supervise one child.
+    if "--bridge-watchdog" in argv:
+        from rdp_manager import watchdog
+        i = argv.index("--bridge-watchdog")
+        try:
+            parent = int(argv[i + 1])
+        except (IndexError, ValueError):
+            parent = os.getppid()
+        sep = i + 2 if (i + 2 < len(argv) and argv[i + 2] == "--") else None
+        child = argv[sep + 1:] if sep else []
+        sys.exit(watchdog.run(parent, child))
     if any(a in ("--list", "--connect", "--version", "-V", "--help", "-h")
            for a in argv):
         if "--help" in argv or "-h" in argv:
