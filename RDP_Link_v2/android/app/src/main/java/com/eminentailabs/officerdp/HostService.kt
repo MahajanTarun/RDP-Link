@@ -524,7 +524,12 @@ class HostService : Service() {
                 }
                 return newFixedLengthResponse(Response.Status.NO_CONTENT, "text/plain", "")
             }
-            val text = readClipboard()
+            var text = readClipboard()
+            if (text.isEmpty()) {
+                // The OS refuses clipboard reads for background apps; the
+                // accessibility service keeps the last value.
+                text = InputAccessibilityService.instance?.clipboardCache().orEmpty()
+            }
             return newFixedLengthResponse(
                 Response.Status.OK, "application/json",
                 JSONObject().put("text", text).toString()

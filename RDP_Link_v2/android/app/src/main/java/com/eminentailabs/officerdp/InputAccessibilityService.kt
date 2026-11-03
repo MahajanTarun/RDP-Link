@@ -2,6 +2,7 @@ package com.eminentailabs.officerdp
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.ClipboardManager
 import android.graphics.Path
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
@@ -29,8 +30,40 @@ class InputAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    /**
+     * The clipboard of the host device.
+     *
+     * From Android 10 on, a background app cannot read the clipboard. An
+     * accessibility service is allowed to, so the last value is cached here
+     * whenever the user copies something and the host serves that cache.
+     */
+    @Volatile
+    private var cachedClipboard: String = ""
+
+    fun clipboardCache(): String = cachedClipboard
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val type = event?.eventType ?: return
+        when (type) {
+            AccessibilityEvent.TYPE_TEXT_SELECTION_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> captureClipboard()
+        }
+    }
+
     override fun onInterrupt() {}
+
+    private fun captureClipboard() {
+        try {
+            val manager = getSystemService(ClipboardManager::class.java) ?: return
+            val clip = manager.primaryClip ?: return
+            if (clip.itemCount == 0) return
+            val text = clip.getItemAt(0).coerceToText(this)?.toString().orEmpty()
+            if (text.isNotEmpty()) cachedClipboard = text
+        } catch (_: Exception) {
+            // The OS refused the read; the cache simply keeps the old value.
+        }
+    }
 
     fun tap(x: Float, y: Float) {
         val path = Path().apply { moveTo(x, y) }
