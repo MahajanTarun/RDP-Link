@@ -7,6 +7,9 @@ import android.os.Bundle
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.Manifest
+import android.content.pm.PackageManager
+import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -23,6 +26,7 @@ class ViewerActivity : Activity() {
     }
 
     private lateinit var web: WebView
+    private var pendingAudio: PermissionRequest? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,7 +59,23 @@ class ViewerActivity : Activity() {
             displayZoomControls = false
         }
         web.webViewClient = WebViewClient()
-        web.webChromeClient = WebChromeClient()
+        web.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(request: PermissionRequest) {
+                val wantsAudio = request.resources.contains(
+                    PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                )
+                when {
+                    !wantsAudio -> request.deny()
+                    checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                        PackageManager.PERMISSION_GRANTED ->
+                        request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                    else -> {
+                        pendingAudio = request
+                        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 42)
+                    }
+                }
+            }
+        }
         web.loadUrl(target)
 
         enterImmersive()
@@ -83,6 +103,21 @@ class ViewerActivity : Activity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) enterImmersive()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 42) return
+        val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        val request = pendingAudio
+        pendingAudio = null
+        if (request == null) return
+        if (granted) request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+        else request.deny()
     }
 
     override fun onBackPressed() {

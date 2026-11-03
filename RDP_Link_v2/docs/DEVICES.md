@@ -50,6 +50,11 @@ binary frames to `WS /mic`; the host pipes them to `ffplay`.
 the drawer reports the error. Use the relay's TLS URL or `localhost` for mic
 testing.
 
+**Android:** the app declares `RECORD_AUDIO` and grants WebView
+`RESOURCE_AUDIO_CAPTURE` after the runtime prompt, but Chromium still requires
+a secure context for `getUserMedia`; use an HTTPS relay URL for microphone on
+Android.
+
 ## 3. Camera (host → guest)
 
 ```sh
