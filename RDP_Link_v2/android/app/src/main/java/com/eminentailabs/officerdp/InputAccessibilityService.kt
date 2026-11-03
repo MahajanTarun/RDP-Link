@@ -45,7 +45,7 @@ class InputAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val type = event?.eventType ?: return
         when (type) {
-            AccessibilityEvent.TYPE_TEXT_SELECTION_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED,
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> captureClipboard()
         }
