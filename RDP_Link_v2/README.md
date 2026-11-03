@@ -30,9 +30,9 @@ All surfaces use an Ant Design 5 light theme (see
 
 ## Layout
 
-- `core/` — identity, peers, protocol, transport, signalling, mDNS, capture,
+- `core/` — identity, peers, signed rendezvous auth, mDNS, capture,
   input, clipboard, policy, host agent.
-- `rendezvous/` — self-hostable registry/presence/signalling server.
+- `rendezvous/` — self-hostable registry and reverse-tunnel relay server.
 - `cmd/office-rdp` — host agent and CLI.
 - `cmd/rendezvous` — server entry.
 - `app/` — desktop launcher (Python/Tk) and `office_viewer.py` guest.
@@ -98,6 +98,15 @@ notarization.
 
 - Every HTTP request is authenticated; passwords are compared in constant
   time and failures are throttled per IP (20/minute → `429`).
+- The access password is never a URL parameter: browsers exchange it for an
+  `HttpOnly`, `SameSite=Strict` session cookie, API clients send the
+  `X-Office-Password` header, and the launcher keeps it in a `0600` file
+  instead of the process list.
+- Cross-site requests and WebSocket upgrades are rejected through an
+  `Origin` check; `X-Forwarded-For` is only believed when the request comes
+  from the in-process relay.
+- The rendezvous only accepts requests signed with the device Ed25519 key, so
+  a peer ID cannot be registered, hijacked or renamed by anyone else.
 - Downloads are restricted to the inbox directory with a path-traversal guard;
   only regular files are served.
 - Frames use a content hash ETag, so a static screen costs a `304`, not a
@@ -106,6 +115,8 @@ notarization.
   with a stop action, and an accessibility service the user must enable.
 - The agent binds `0.0.0.0` by design (guests must reach it); restrict it with
   a firewall or a private rendezvous server if needed.
+
+See [`docs/SECURITY.md`](docs/SECURITY.md) for the full model.
 
 ## Record a session
 

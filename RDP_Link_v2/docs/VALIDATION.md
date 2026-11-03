@@ -200,7 +200,7 @@ LAN:  http://192.168.1.13:8099/
 $ curl -s http://192.168.1.13:8099/info
 {"alias":"mcitlptp810","lanIp":"192.168.1.13","peerId":"388 300 819", ...}
 $ curl -s -o f.jpg -w '%{http_code} %{size_download}\n' \
-    'http://192.168.1.13:8099/frame.jpg?password=lintest'
+    -H "X-Office-Password: lintest" 'http://192.168.1.13:8099/frame.jpg'
 200 92546
 ```
 
@@ -234,14 +234,14 @@ $ curl -s http://127.0.0.1:18095/info
 {"peerId":"950 270 362","alias":"Android","status":"online","port":8095,
  "version":"0.2.0","platform":"android"}
 $ curl -s -o a.jpg -w '%{http_code} %{size_download}\n' \
-    'http://127.0.0.1:18095/frame.jpg?password=768516'
+    -H "X-Office-Password: 768516" 'http://127.0.0.1:18095/frame.jpg'
 200 124444
 
 # remote control enabled → green tag "Remote control enabled"
 # inject a tap on the "New password" button
 $ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
     -H 'Content-Type: application/json' -d '{"type":"click","x":898,"y":770}' \
-    'http://127.0.0.1:18095/input?password=768516'
+    -H "X-Office-Password: 768516" 'http://127.0.0.1:18095/input'
 204
 # password after the remote tap (uiautomator dump): 227170
 ```
@@ -268,7 +268,7 @@ probe: OK 117187 bytes 1512x982
 
 $ wine office-rdp.exe --host --test-pattern --port 18099 --password wintest
 $ curl -s -o f.jpg -w '%{http_code} %{size_download}\n' \
-    'http://127.0.0.1:18099/frame.jpg?password=wintest'
+    -H "X-Office-Password: wintest" 'http://127.0.0.1:18099/frame.jpg'
 200 25846
 # ETag changes between frames; /input → 204; /ui → 200
 ```
@@ -342,5 +342,5 @@ The native arm64 package is fully validated and the code path is identical.
 - **Linux amd64 live capture** under emulation: see above.
 - **Android** validated on one physical device (Samsung SM-S711B, Android 16);
   vendor ROMs may differ.
-- **WebRTC media path**: the HTTP JPEG path is what all viewers use; the
+- **H.264 recording path**: the HTTP JPEG path is what all viewers use; the
   Pion/OpenH264 track is built and started but not exercised end-to-end.

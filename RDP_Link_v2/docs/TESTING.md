@@ -28,7 +28,7 @@ any pair can be tested host ↔ guest without a rendezvous server.
 
 | Purpose | Tool / library |
 | --- | --- |
-| Host agent, rendezvous server | Go 1.26 (`net/http`, `embed`), `github.com/kbinani/screenshot` (X11/GDI capture), `github.com/jezek/xgb` (X11), Pion (`mediadevices`, `webrtc`, `openh264`) for the optional WebRTC track |
+| Host agent, rendezvous server | Go 1.26 (`net/http`, `embed`), `github.com/kbinani/screenshot` (X11/GDI capture), `github.com/jezek/xgb` (X11), Pion (`mediadevices`, `openh264`) for the optional H.264 recording track |
 | Desktop launcher and guest viewer | Python 3.12–3.14, Tkinter/ttk, Pillow (JPEG decode), standard library only otherwise |
 | Windows launcher packaging | PyInstaller 6.22 (onefile), Pillow for the `.ico`, NSIS 3 for the installer, mingw-w64 for the CGO agent |
 | Android host and guest | Kotlin, Android SDK 36, NanoHTTPD, `MediaProjection`, `AccessibilityService`, `WebView` |
@@ -91,17 +91,17 @@ Expected tail: `ALL TESTS PASSED` and `SECURITY SCANS PASSED`.
 ### 4.2 Protocol checks (host, any platform)
 
 ```sh
-curl -s http://HOST:8099/info
+curl -s -H "X-Office-Password: PW" http://HOST:8099/info
 curl -s -o /tmp/f.jpg -w '%{http_code} %{size_download} %{content_type}\n' \
-  'http://HOST:8099/frame.jpg?password=PW'
+  -H "X-Office-Password: PW" 'http://HOST:8099/frame.jpg'
 od -An -tx1 -N3 /tmp/f.jpg                     # ff d8 ff
-etag=$(curl -sD- -o /dev/null 'http://HOST:8099/frame.jpg?password=PW' \
+etag=$(curl -sD- -o /dev/null -H "X-Office-Password: PW" 'http://HOST:8099/frame.jpg' \
   | tr -d '\r' | awk -F': ' 'tolower($1)=="etag"{print $2}')
 curl -s -o /dev/null -w '%{http_code}\n' \
-  -H "If-None-Match: $etag" 'http://HOST:8099/frame.jpg?password=PW'
+  -H "If-None-Match: $etag" 'http://HOST:8099/frame.jpg-H 'X-Office-Password: PW''
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -H 'Content-Type: application/json' -d '{"type":"move","x":10,"y":10}' \
-  'http://HOST:8099/input?password=PW'
+  'http://HOST:8099/input-H 'X-Office-Password: PW''
 curl -s -o /dev/null -w '%{http_code}\n' http://HOST:8099/ui
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -H 'X-Office-Password: PW' http://HOST:8099/quit
@@ -168,7 +168,7 @@ adb -s <serial> shell am start -n com.eminentailabs.officerdp/.MainActivity
 adb -s <serial> forward tcp:18095 tcp:8095
 curl -s http://127.0.0.1:18095/info
 curl -s -o /tmp/a.jpg -w '%{http_code} %{size_download}\n' \
-  'http://127.0.0.1:18095/frame.jpg?password=PW'
+  'http://127.0.0.1:18095/frame.jpg-H 'X-Office-Password: PW''
 
 # Guest: enter http://MAC:8099/#pw=PW and tap Connect, then
 adb -s <serial> exec-out screencap -p > /tmp/guest.png
@@ -180,7 +180,7 @@ adb -s <serial> shell cat /sdcard/ui.xml
 # Remote-control proof: inject a tap via the host API and read the result back
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -H 'Content-Type: application/json' -d '{"type":"click","x":898,"y":770}' \
-  'http://127.0.0.1:18095/input?password=PW'
+  'http://127.0.0.1:18095/input-H 'X-Office-Password: PW''
 ```
 
 `/input` must return `204`, and a follow-up `uiautomator dump` must show the
@@ -197,7 +197,8 @@ curl -s 'http://192.168.1.14:18080/resolve?peerId=033976933'
 # {"relay":true,"url":"http://192.168.1.14:18080/t/033976933/",...}
 
 curl -s -o f.jpg -w '%{http_code} %{size_download}\n' \
-  'http://192.168.1.14:18080/t/033976933/frame.jpg?password=relay1'
+  -H "X-Office-Password: relay1" \
+  'http://192.168.1.14:18080/t/033976933/frame.jpg'
 ```
 
 TLS: add `--tls-cert/--tls-key` to the relay, `--relay-insecure` (or
@@ -209,13 +210,16 @@ certificate. The viewer must be opened at the **trailing-slash** URL.
 ```sh
 adb forward tcp:18088 tcp:8088
 PW=552436
-curl -s "http://127.0.0.1:18088/clipboard?password=$PW"          # GET
+curl -s -H "X-Office-Password: $PW" \
+  "http://127.0.0.1:18088/clipboard"                               # GET
 curl -s -X POST -H 'Content-Type: application/json' \
-  -d '{"text":"hello"}' "http://127.0.0.1:18088/clipboard?password=$PW"
-curl -s "http://127.0.0.1:18088/files?password=$PW"
-curl -s -F "file=@/tmp/parity.txt;filename=parity.txt" \
-  "http://127.0.0.1:18088/upload?password=$PW&name=parity.txt"
-curl -s -o out.txt "http://127.0.0.1:18088/download?password=$PW&name=parity.txt"
+  -H "X-Office-Password: $PW" \
+  -d '{"text":"hello"}' "http://127.0.0.1:18088/clipboard"
+curl -s -H "X-Office-Password: $PW" "http://127.0.0.1:18088/files"
+curl -s -H "X-Office-Password: $PW" -F "file=@/tmp/parity.txt;filename=parity.txt" \
+  "http://127.0.0.1:18088/upload?name=parity.txt"
+curl -s -H "X-Office-Password: $PW" -o out.txt \
+  "http://127.0.0.1:18088/download?name=parity.txt"
 ```
 
 ### 4.7 Device bridge
@@ -229,25 +233,25 @@ office-rdp --host --port 8088 --password PW \
   --forward 9099
 
 # Capabilities (always authenticated)
-curl -s "http://HOST:8088/capabilities?password=PW"
+curl -s "http://HOST:8088/capabilities-H 'X-Office-Password: PW'"
 
 # Speaker (2 s, valid Opus/WebM)
-curl -s -m 2 -o a.webm "http://HOST:8088/audio?password=PW"
+curl -s -m 2 -o a.webm "http://HOST:8088/audio-H 'X-Office-Password: PW'"
 ffmpeg -i a.webm            # Audio: opus, 48000 Hz, mono
 
 # Camera (testsrc avoids camera permissions)
-curl -s -m 2 -o c.mjpeg "http://HOST:8088/camera.mjpg?password=PW"
+curl -s -m 2 -o c.mjpeg "http://HOST:8088/camera.mjpg-H 'X-Office-Password: PW'"
 # MJPEG 640x480 frames
 
 # Port allow-list
-curl -s "http://HOST:8088/port/9099/?password=PW"
+curl -s "http://HOST:8088/port/9099/-H 'X-Office-Password: PW'"
 
 # Serial WebSocket (direct)
-go run ./scripts/wsprobe -url "ws://HOST:8088/serial?password=PW" -send $'ping\n'
+go run ./scripts/wsprobe -url "ws://HOST:8088/serial-H 'X-Office-Password: PW'" -send $'ping\n'
 
 # Microphone (direct): send a WebM/Opus chunk
 ffmpeg -f lavfi -i "sine=frequency=660" -t 1 -c:a libopus -f webm mic.webm
-go run ./scripts/wsprobe -url "ws://HOST:8088/mic?password=PW" -file mic.webm -no-wait
+go run ./scripts/wsprobe -url "ws://HOST:8088/mic-H 'X-Office-Password: PW'" -file mic.webm -no-wait
 ```
 
 Evaluation: `/capabilities` lists only configured devices; audio decodes as
@@ -349,7 +353,7 @@ go vet ./...            clean
 go test ./...           all packages pass
 go build ./...          ok
 pyflakes                clean
-pytest                  72 passed
+pytest                  80 passed
 gosec (medium+)         pass
 govulncheck             no reachable vulnerabilities
 shellcheck              pass
@@ -365,6 +369,34 @@ TLS variant (self-signed)  200 26,782 bytes
 Android guest through relay 1280×800 · 11 fps
 Android host clipboard     POST 204 → GET returns the text
 Android host files         upload 204 → ["parity.txt"] → download 200, MATCH
+```
+
+### 6.3c Security pass (this pass)
+
+```
+# credentials
+/info without credentials          401
+/info?password=PW                   401      (the password is not a URL credential)
+/info with X-Office-Password       200
+POST /session                      200 + rdplink_sid cookie (HttpOnly, SameSite=Strict)
+/info with the cookie              200
+/info?token=<session token>        200
+cross-origin POST /input           403
+spoofed X-Forwarded-For            ignored (no relay secret)
+unsigned POST /register            401
+peer claiming another peer ID      rejected (peer ID must match the key)
+anonymous GET /peers               401
+office-rdp --list-peers <relay>    the registry
+
+# relay
+signed tunnel                      connected
+frame through /t/<peer>/           200, JPEG
+audio stream, guest disconnects    host ffmpeg stops, tunnel stays healthy
+second stream after that           200
+
+# browser guest
+password → session cookie          the frame renders at 1280×800 · 22 fps
+Devices drawer → Files             upload + list + download work
 ```
 
 ### 6.4 Input-injection proof (Android)
@@ -406,7 +438,7 @@ Screenshots were captured for each surface during the pass.
 - **macOS self-connect**: connecting a local viewer to the same Mac's LAN IP
   can be reset by the OS before it reaches the Go listener; use `127.0.0.1`
   for same-machine tests. External LAN clients (Linux PC, Android) work.
-- **WebRTC track** is built and started but the product viewers use the HTTP
+- **H.264 recording track** is built and started but the product viewers use the HTTP
   JPEG path; the Pion track is not exercised end-to-end.
 - **Android** was validated on one physical device (Android 16); behaviour can
   differ on vendor ROMs.
