@@ -255,7 +255,7 @@ validated with `--test-pattern`; the *guest* is fully validated under Wine.
 | Linux (1366×768, real X) → macOS viewer | Live desktop rendered; `/frame.jpg` 98,111 bytes; status `1366×768` |
 | macOS (1512×982, real capture) → Linux viewer | Live desktop rendered at `1512×982 · 5–6 fps`; `/frame.jpg` 183,804 bytes |
 | Android (1080×2340, MediaProjection) → macOS viewer | Live phone screen at `1080×2340 · 35 fps`; `/frame.jpg` 124,444 bytes |
-| macOS → Android guest, landscape | Same APK on the API 36 emulator at 2400×1080; status `1512×982 · 11 fps`; logo + scale selector visible |
+| macOS → Android guest (physical phone) | Portrait 1080×2340, landscape 2340×1080, status `1512×982 · 9 fps`; selecting 100 % switches to native size with a scrollable stage; same APK also ran on the API 36 emulator |
 | macOS → Android `ViewerActivity` | Full-screen guest with Ant Design header; status `1512×982` |
 | Windows (Wine, test pattern) → in-app Chromium | `1280×800 · 6 fps` |
 | Any host → browser | Password overlay, stream, input, fit/fullscreen, clipboard |

@@ -18,7 +18,7 @@ this validation pass, on physical hardware.
 | **macOS 27.2 (arm64)** | **Working — live.** 1512×982 JPEG stream; `/info`, `/frame.jpg`, ETag `304`, `/input`, `/ui`, `/quit` verified. Served a live session to the Linux PC and to the Android phone. | **Working — live.** Desktop viewer rendered the live Linux desktop (1366×768) and the Android screen (1080×2340 · 35 fps). Browser guest works too. |
 | **Linux (Ubuntu 24.04, X11)** | **Working — live.** Real X session at 1366×768 (not Xvfb): `/info`, JPEG `/frame.jpg` (92,546 bytes), ETag `304`, `/input` 204, `/ui` 200, `/quit` 204. arm64 `.deb` also fully validated. | **Working — live.** `rdp-link` viewer on the Linux PC displayed the macOS host at 1512×982 · 6 fps. |
 | **Windows (installer + app)** | **Working under Wine — test pattern.** Real GDI capture needs Windows hardware; under Wine `office-rdp.exe --host --test-pattern` served `/info`, a 1280×800 JPEG, changing ETags, `/input` 204 and `/ui` 200. | **Working — live under Wine.** `rdp-link.exe` (PyInstaller, no Python needed) renders the Ant Design launcher; `--viewer --probe` returned a 1512×982 frame. Browser guest shows `1280×800 · fps`. |
-| **Android 16 (SM-S711B)** | **Working — live on a physical device.** MediaProjection host on port 8095: `/info`, JPEG frames (124,444 bytes), accessibility input injection changed the on-screen password (768516 → 227170). | **Working — live.** Full-screen `ViewerActivity` displayed the macOS host; status tag `1512×982`. Portrait verified on the phone, portrait + landscape on the API 36 emulator with the same APK. |
+| **Android 16 (SM-S711B)** | **Working — live on a physical device.** MediaProjection host on port 8095: `/info`, JPEG frames (124,444 bytes), accessibility input injection changed the on-screen password (768516 → 227170). | **Working — live.** Full-screen `ViewerActivity` displayed the macOS host; status tag `1512×982`. Portrait, landscape and 100 % custom scaling verified on the phone; the same APK also ran in landscape on the API 36 emulator. |
 
 **Browser guest (all platforms) — working.** Every host serves the same
 `viewer.html`, so any device with a browser can connect without installing
@@ -50,8 +50,9 @@ See [`UI-DESIGN.md`](UI-DESIGN.md) for tokens and per-surface mapping.
 | Orientation | Window resize triggers a re-render | Android activities keep state across rotation (`configChanges`) and the CSS reflows |
 
 Verified: 100 % on a 1280×800 stream produced a 1280×800 frame with a
-scrollable stage; Android landscape rendered the macOS host at 1512×982 in the
-same APK.
+scrollable stage; the physical Android phone rendered the macOS host in
+landscape at 1512×982 · 9 fps and switched to 100 % (native 1512×982, cropped
+and scrollable) from the same scale selector.
 
 ## Evidence
 
@@ -130,11 +131,12 @@ $ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 # password after the remote tap (uiautomator dump): 227170
 ```
 
-Android guest → macOS host:
+Android guest → macOS host (physical SM-S711B, Android 16):
 
 ```
-ViewerActivity, full screen: status 1512×982
-header wraps to two rows in portrait; status tag never truncates
+portrait:  1080×2340, logo header, status tag 1512×982
+landscape: 2340×1080, status 1512×982 · 9 fps, scale selector "Auto fit"
+custom:    selected "100%" → native 1512×982 frame, stage scrolls
 ```
 
 macOS viewer → Android host:
