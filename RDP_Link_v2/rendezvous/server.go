@@ -39,6 +39,9 @@ type Server struct {
 	policies map[string]map[string]any
 	tunnels  map[string]*tunnel
 	peerKeys map[string]ed25519.PublicKey
+	// peerKeyUsed remembers when a key was last used, so the pin table can
+	// evict the least recently seen entry instead of growing forever.
+	peerKeyUsed map[string]time.Time
 	// adminToken unlocks the full registry listing (with the LAN addresses).
 	// Without it, /peers only returns the peer IDs and aliases.
 	adminToken   string
@@ -48,10 +51,21 @@ type Server struct {
 	resolveCalls map[string]time.Time
 }
 
+// Bounds for the in-memory tables. A rendezvous server is a long-running
+// process, so an attacker who can reach it must not be able to grow these
+// maps without limit.
+const (
+	maxPeerKeys    = 10000
+	maxPairs       = 1024
+	maxPeerRecords = 10000
+	peerRecordTTL  = 24 * time.Hour
+)
+
 func NewServer() *Server {
 	return &Server{peers: map[string]*PeerInfo{}, conns: map[string]*websocket.Conn{},
 		pairs: map[string]pendingPair{}, policies: map[string]map[string]any{},
 		tunnels: map[string]*tunnel{}, peerKeys: map[string]ed25519.PublicKey{},
+		peerKeyUsed:  map[string]time.Time{},
 		resolveCalls: map[string]time.Time{},
 		upgrader:     websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}}
 }
@@ -87,11 +101,57 @@ func (s *Server) verifyPeer(r *http.Request, body []byte) (string, bool) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if known, ok := s.peerKeys[peer]; ok && !known.Equal(pub) {
-		return "", false
+	if known, ok := s.peerKeys[peer]; ok {
+		if !known.Equal(pub) {
+			return "", false
+		}
+		s.peerKeyUsed[peer] = time.Now()
+		return peer, true
+	}
+	if len(s.peerKeys) >= maxPeerKeys {
+		s.evictPeerKeyLocked()
 	}
 	s.peerKeys[peer] = pub
+	s.peerKeyUsed[peer] = time.Now()
 	return peer, true
+}
+
+// evictPeerKeyLocked drops the least recently used key. The caller holds
+// s.mu. A peer ID is derived from its key, so losing a pin only weakens the
+// defence against a hash collision, it never lets somebody claim another
+// peer ID outright.
+func (s *Server) evictPeerKeyLocked() {
+	oldestKey, oldest := "", time.Now()
+	for key, used := range s.peerKeyUsed {
+		if used.Before(oldest) {
+			oldestKey, oldest = key, used
+		}
+	}
+	if oldestKey != "" {
+		delete(s.peerKeys, oldestKey)
+		delete(s.peerKeyUsed, oldestKey)
+	}
+}
+
+// sweepLocked removes registry entries that have not been seen for a day.
+func (s *Server) sweepLocked(now time.Time) {
+	if len(s.peers) < maxPeerRecords {
+		return
+	}
+	for id, info := range s.peers {
+		if now.Sub(info.LastSeen) > peerRecordTTL {
+			delete(s.peers, id)
+		}
+	}
+	// If the table is still full, drop the least recently seen half.
+	if len(s.peers) >= maxPeerRecords {
+		for id := range s.peers {
+			delete(s.peers, id)
+			if len(s.peers) < maxPeerRecords/2 {
+				break
+			}
+		}
+	}
 }
 
 // resolveAllowed throttles the unauthenticated /resolve endpoint so the peer
@@ -142,6 +202,7 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 		info.Status = "online"
 	}
 	s.mu.Lock()
+	s.sweepLocked(time.Now())
 	s.peers[info.PeerID] = &info
 	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
@@ -254,12 +315,21 @@ func (s *Server) PairStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method", http.StatusMethodNotAllowed)
 		return
 	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+	if _, ok := s.verifyPeer(r, body); !ok {
+		http.Error(w, "signature required", http.StatusUnauthorized)
+		return
+	}
 	var req struct {
 		From string `json:"from"`
 		To   string `json:"to"`
 		Code string `json:"code"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -267,12 +337,24 @@ func (s *Server) PairStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing fields", http.StatusBadRequest)
 		return
 	}
+	now := time.Now()
 	s.mu.Lock()
 	if s.pairs == nil {
 		s.pairs = map[string]pendingPair{}
 	}
+	for key, pair := range s.pairs {
+		if now.After(pair.Exp) {
+			delete(s.pairs, key)
+		}
+	}
+	if len(s.pairs) >= maxPairs {
+		s.mu.Unlock()
+		http.Error(w, "too many pending pairings", http.StatusTooManyRequests)
+		return
+	}
 	key := req.From + "|" + req.To
-	s.pairs[key] = pendingPair{From: req.From, To: req.To, Code: req.Code, Exp: time.Now().Add(5 * time.Minute)}
+	s.pairs[key] = pendingPair{From: req.From, To: req.To, Code: req.Code,
+		Exp: now.Add(5 * time.Minute)}
 	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "pending"})
@@ -283,12 +365,21 @@ func (s *Server) PairVerify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method", http.StatusMethodNotAllowed)
 		return
 	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+	if _, ok := s.verifyPeer(r, body); !ok {
+		http.Error(w, "signature required", http.StatusUnauthorized)
+		return
+	}
 	var req struct {
 		From string `json:"from"`
 		To   string `json:"to"`
 		Code string `json:"code"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

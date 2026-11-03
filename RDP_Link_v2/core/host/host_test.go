@@ -2,7 +2,11 @@ package host
 
 import (
 	"encoding/json"
+	"mime"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -168,5 +172,88 @@ func TestFailureTableIsBounded(t *testing.T) {
 	a.failMu.Unlock()
 	if size > maxFailEntries {
 		t.Fatalf("failure table grew to %d entries", size)
+	}
+}
+
+func TestDeviceBridgeRejectsCrossOrigin(t *testing.T) {
+	startAgent(t, 18098)
+	for _, path := range []string{"/capabilities", "/usb/list", "/port/8080/", "/audio"} {
+		req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:18098"+path, nil)
+		req.Header.Set("X-Office-Password", "secret")
+		req.Header.Set("Origin", "http://evil.example")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("%s must reject cross-origin requests, got %d", path, resp.StatusCode)
+		}
+	}
+}
+
+func TestSessionRejectsCrossOrigin(t *testing.T) {
+	startAgent(t, 18097)
+	req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1:18097/session",
+		strings.NewReader(`{"password":"secret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://evil.example")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin session request must be rejected, got %d", resp.StatusCode)
+	}
+}
+
+func TestClipboardReadsAreCached(t *testing.T) {
+	a := New("123", "host", "secret", 18096)
+	a.clipText = "cached value"
+	a.clipReadAt = time.Now()
+	if got := a.GetClipboard(); got != "cached value" {
+		t.Fatalf("cached clipboard not returned: %q", got)
+	}
+	// An expired cache is refreshed from the operating system.
+	a.clipReadAt = time.Now().Add(-2 * clipboardCacheTTL)
+	_ = a.GetClipboard()
+	a.clipMu.Lock()
+	fresh := time.Since(a.clipReadAt) < time.Second
+	a.clipMu.Unlock()
+	if !fresh {
+		t.Fatal("clipboard cache was not refreshed")
+	}
+}
+
+func TestDownloadIsAnAttachment(t *testing.T) {
+	a := New("123", "host", "secret", 18095)
+	dir := a.InboxDir()
+	name := `quote"name.txt`
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(filepath.Join(dir, name))
+	go func() { _ = a.Serve() }()
+	time.Sleep(200 * time.Millisecond)
+
+	req, _ := http.NewRequest(http.MethodGet,
+		"http://127.0.0.1:18095/download?name="+url.QueryEscape(name), nil)
+	req.Header.Set("X-Office-Password", "secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	disposition := resp.Header.Get("Content-Disposition")
+	mediaType, params, err := mime.ParseMediaType(disposition)
+	if err != nil {
+		t.Fatalf("invalid Content-Disposition %q: %v", disposition, err)
+	}
+	if mediaType != "attachment" {
+		t.Fatalf("download is not an attachment: %q", disposition)
+	}
+	if params["filename"] != name {
+		t.Fatalf("file name was not preserved: %q != %q", params["filename"], name)
 	}
 }

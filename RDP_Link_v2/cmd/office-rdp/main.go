@@ -162,7 +162,6 @@ func main() {
 			fmt.Fprintln(os.Stderr, "capture:", err)
 		}
 		ag.PublishVirtualCamera()
-		ag.StartClipboardSync()
 		if *record != "" {
 			if err := ag.StartRecording(*record); err != nil {
 				fmt.Fprintln(os.Stderr, "record:", err)
@@ -208,7 +207,11 @@ func main() {
 					if err == nil {
 						resp.Body.Close()
 					}
-					time.Sleep(30 * time.Second)
+					select {
+					case <-ag.Done():
+						return
+					case <-time.After(30 * time.Second):
+					}
 				}
 			}()
 			fmt.Printf("Rendezvous: %s\n", *rendezvous)
@@ -221,9 +224,14 @@ func main() {
 				Insecure:   *relayInsecure,
 				CAFile:     *relayCA,
 				Secret:     ag.RelaySecret(),
+				Done:       ag.Done(),
 			}).Run()
 			go func() {
-				time.Sleep(2 * time.Second)
+				select {
+				case <-ag.Done():
+					return
+				case <-time.After(2 * time.Second):
+				}
 				resp, err := peerauth.Send(rendezvousClient, http.MethodGet,
 					*rendezvous+"/policy?peerId="+id.Formatted(), nil, id.PrivateKey, "")
 				if err != nil || resp.StatusCode != 200 {

@@ -397,6 +397,12 @@ second stream after that           200
 # browser guest
 password → session cookie          the frame renders at 1280×800 · 22 fps
 Devices drawer → Files             upload + list + download work
+
+# second pass
+cross-origin /capabilities         403 (device bridge included)
+cookie through the relay           Path=/t/<peerId>/
+browser → host clipboard           text landed on pbpaste and in GET /clipboard
+relay client with the agent gone   the reconnect loop returns
 ```
 
 ### 6.4 Input-injection proof (Android)

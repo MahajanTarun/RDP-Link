@@ -90,3 +90,24 @@ func TestApplyHeadersMarksRelayRequests(t *testing.T) {
 		t.Fatal("forwarded address was dropped")
 	}
 }
+
+// TestRunStopsWhenDone makes sure the reconnect loop ends when the host
+// shuts down instead of sleeping forever in the background.
+func TestRunStopsWhenDone(t *testing.T) {
+	done := make(chan struct{})
+	client := &Client{
+		Rendezvous: "http://127.0.0.1:1",
+		PeerID:     "033976933",
+		LocalPort:  1,
+		Done:       done,
+	}
+	finished := make(chan struct{})
+	go func() { client.Run(); close(finished) }()
+	time.Sleep(150 * time.Millisecond)
+	close(done)
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("relay client did not stop after Done was closed")
+	}
+}

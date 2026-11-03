@@ -183,6 +183,19 @@ Additional fixes from the same review:
 | Relay, signed tunnel | macOS host → relay | tunnel connected, frame `200` through `/t/<peer>/`, audio stream aborted by the guest, host `ffmpeg` stopped, the tunnel stayed healthy |
 | Relay, admin token | relay | `--list-peers` without the token shows no address, with `--admin-token` the LAN address appears |
 
+## Second review pass (2026-11-03)
+
+The follow-up review found six more issues; all are fixed and verified.
+
+| # | Finding | Fix | Evidence |
+| --- | --- | --- | --- |
+| 1 | **`sameOrigin` bypass on the device bridge**: the check lived in a local wrapper, so `/capabilities`, `/audio`, `/usb/*`, `/port/…` and `/session` skipped it | The check moved into `(*Agent).auth` and `(*Agent).handleSession`, which every endpoint uses | `TestDeviceBridgeRejectsCrossOrigin`, `TestSessionRejectsCrossOrigin`; live: `Origin: http://evil.example` → `403`, same-origin → `200` |
+| 2 | **Session cookie collision on the relay**: the host set `Path=/`, so two tunnelled hosts on one relay shared and overwrote one `rdplink_sid` cookie | The relay narrows the path to `Path=/t/<peerId>/` without touching the other attributes | `TestScopeSetCookie`; live: the relay returns `Path=/t/033976933/` and the browser guest still streams `1280×800 · 6 fps` |
+| 3 | **Clipboard poll every 500 ms**: `StartClipboardSync` spawned a helper process twice a second on every platform (`powershell.exe` on Windows) even with no guest | The clipboard is read on demand in `GET /clipboard` and cached for 750 ms; Windows with cgo uses the Win32 clipboard through robotgo | `TestClipboardReadsAreCached`; live: a browser write reached the macOS clipboard and `GET /clipboard` returned it |
+| 4 | **Cancel/first-frame race** in the relay client: a cancel that arrived before the stream goroutine registered was lost, and the host kept the device open | The cancel function is registered before the goroutine starts; the reconnect loop and the background workers stop with the agent | `TestRunStopsWhenDone`; the streaming cancel test still passes |
+| 5 | **Wrong platform defaults**: `handleMicWS` never fell back to `ffmpeg`, and the camera used `avfoundation` on Linux/Windows | The player, the audio output (`audiotoolbox`/`pulse`/`waveout`) and the camera input (`v4l2`/`dshow`/`avfoundation`) follow the platform | `go build` for linux/darwin/windows; the device tests still pass |
+| 6 | **Hand-written Linux unit lost the password**, unbounded rendezvous tables, `Content-Disposition` injection, no clipboard write in the browser | The setup assistant calls `office-rdp --install-service`; the key/pair/peer tables are bounded; `mime.FormatMediaType` builds the header; the Devices drawer gained Send-to-host and paste forwarding | `TestDownloadIsAnAttachment`, `TestPairing`; live: the new Clipboard section sent text to the host |
+
 ## Evidence
 
 ### Tests and static analysis

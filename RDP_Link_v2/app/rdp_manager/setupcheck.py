@@ -315,15 +315,15 @@ def _linux_firewall():
 
 
 def _linux_service():
-    unit = os.path.expanduser("~/.config/systemd/user/office-rdp.service")
-    os.makedirs(os.path.dirname(unit), exist_ok=True)
-    agent = shutil.which("office-rdp") or "office-rdp"
-    with open(unit, "w") as fh:
-        fh.write(
-            "[Unit]\nDescription=RDP Link host\n\n"
-            f"[Service]\nExecStart={shlex.quote(agent)} --host --port 8088\n"
-            "Restart=always\n\n"
-            "[Install]\nWantedBy=default.target\n")
+    """Install the same systemd unit the agent writes (with --password-file).
+
+    Writing a different unit here would lose the persisted password and the
+    host would generate a random one on every login.
+    """
+    agent = _agent_binary()
+    if not agent:
+        return False
+    _run([agent, "--install-service"], timeout=30)
     _run(["systemctl", "--user", "daemon-reload"])
     _run(["systemctl", "--user", "enable", "--now", "office-rdp.service"])
     return True

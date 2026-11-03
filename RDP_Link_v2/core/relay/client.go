@@ -41,6 +41,8 @@ type Client struct {
 	// came from this process. Only requests carrying it may set
 	// X-Forwarded-For.
 	Secret string
+	// Done stops the reconnect loop when the channel is closed.
+	Done <-chan struct{}
 }
 
 type request struct {
@@ -64,17 +66,55 @@ type reply struct {
 	Error   string            `json:"error,omitempty"`
 }
 
-// Run connects and reconnects until the process exits.
+// Run connects and reconnects until the process exits or Done is closed.
 func (c *Client) Run() {
 	backoff := 3 * time.Second
 	for {
+		if c.stopped() {
+			return
+		}
 		if err := c.connectOnce(); err != nil {
+			if c.stopped() {
+				return
+			}
 			log.Printf("relay: %v (retrying in %s)", err, backoff)
 		}
-		time.Sleep(backoff)
+		if !c.sleep(backoff) {
+			return
+		}
 		if backoff < 30*time.Second {
 			backoff *= 2
 		}
+	}
+}
+
+// stopped reports whether the client was asked to stop.
+func (c *Client) stopped() bool {
+	if c.Done == nil {
+		return false
+	}
+	select {
+	case <-c.Done:
+		return true
+	default:
+		return false
+	}
+}
+
+// sleep waits for the given duration and returns false when the client was
+// asked to stop in the meantime.
+func (c *Client) sleep(d time.Duration) bool {
+	if c.Done == nil {
+		time.Sleep(d)
+		return true
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-c.Done:
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -190,27 +230,35 @@ func (c *Client) connectOnce() error {
 			}
 			continue
 		}
-		sem <- struct{}{}
-		go func(req request) {
-			defer func() { <-sem }()
-			send := func(rep reply) {
-				out, _ := json.Marshal(rep)
-				writeMu.Lock()
-				_ = conn.WriteMessage(websocket.TextMessage, out)
-				writeMu.Unlock()
-			}
-			if req.Stream {
-				ctx, cancel := context.WithCancel(context.Background())
-				streamMu.Lock()
-				streams[req.ID] = cancel
-				streamMu.Unlock()
+		send := func(rep reply) {
+			out, _ := json.Marshal(rep)
+			writeMu.Lock()
+			_ = conn.WriteMessage(websocket.TextMessage, out)
+			writeMu.Unlock()
+		}
+		if req.Stream {
+			// The cancel function is registered before the goroutine is
+			// started. Otherwise a cancel frame that arrives while the
+			// goroutine is still queued would be lost and the host would
+			// keep the device open.
+			ctx, cancel := context.WithCancel(context.Background())
+			streamMu.Lock()
+			streams[req.ID] = cancel
+			streamMu.Unlock()
+			sem <- struct{}{}
+			go func(req request) {
+				defer func() { <-sem }()
 				c.stream(ctx, req, send)
 				streamMu.Lock()
 				delete(streams, req.ID)
 				streamMu.Unlock()
 				cancel()
-				return
-			}
+			}(req)
+			continue
+		}
+		sem <- struct{}{}
+		go func(req request) {
+			defer func() { <-sem }()
 			send(c.execute(req))
 		}(req)
 	}

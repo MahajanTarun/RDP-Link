@@ -267,7 +267,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if streaming {
-		s.proxyStream(w, r, t, id, ch)
+		s.proxyStream(w, r, t, id, peerID, ch)
 		return
 	}
 
@@ -278,9 +278,13 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for k, v := range reply.Headers {
-			if responseHeaders[strings.ToLower(k)] {
-				w.Header().Set(k, v)
+			if !responseHeaders[strings.ToLower(k)] {
+				continue
 			}
+			if strings.EqualFold(k, "Set-Cookie") {
+				v = scopeSetCookie(v, "/t/"+peerID)
+			}
+			w.Header().Set(k, v)
 		}
 		data, _ := base64.StdEncoding.DecodeString(reply.Body)
 		w.WriteHeader(reply.Status)
@@ -297,7 +301,8 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 // When the guest goes away the stream is cancelled: the host is told to stop
 // capturing and the local request is aborted, so neither side keeps a camera
 // or an audio device busy for a viewer that is no longer there.
-func (s *Server) proxyStream(w http.ResponseWriter, r *http.Request, t *tunnel, id string, ch chan tunnelReply) {
+func (s *Server) proxyStream(w http.ResponseWriter, r *http.Request, t *tunnel,
+	id, peerID string, ch chan tunnelReply) {
 	flusher, _ := w.(http.Flusher)
 	started := false
 	cancelled := false
@@ -312,9 +317,13 @@ func (s *Server) proxyStream(w http.ResponseWriter, r *http.Request, t *tunnel, 
 			switch frame.Type {
 			case "stream":
 				for k, v := range frame.Headers {
-					if responseHeaders[strings.ToLower(k)] {
-						w.Header().Set(k, v)
+					if !responseHeaders[strings.ToLower(k)] {
+						continue
 					}
+					if strings.EqualFold(k, "Set-Cookie") {
+						v = scopeSetCookie(v, "/t/"+peerID)
+					}
+					w.Header().Set(k, v)
 				}
 				w.WriteHeader(frame.Status)
 				started = true
@@ -355,6 +364,34 @@ func (s *Server) proxyStream(w http.ResponseWriter, r *http.Request, t *tunnel, 
 			return
 		}
 	}
+}
+
+// scopeSetCookie limits a cookie to the tunnelled host.
+//
+// The host sends its session cookie with Path=/. On the relay that would
+// cover every other tunnelled host as well: a guest that connects to two
+// devices on the same relay would send the first cookie to the second one
+// and overwrite it when logging in.
+//
+// The value is rewritten textually instead of being parsed and rebuilt, so
+// the host's own attributes (HttpOnly, SameSite, Secure, Expires) survive
+// untouched. Set-Cookie attributes are separated by semicolons and an
+// Expires date never contains one, so splitting on ";" is safe.
+func scopeSetCookie(raw, prefix string) string {
+	parts := strings.Split(raw, ";")
+	for i, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if !strings.HasPrefix(strings.ToLower(trimmed), "path=") {
+			continue
+		}
+		value := strings.TrimSpace(trimmed[len("path="):])
+		if value == "" || value == "/" {
+			parts[i] = " Path=" + prefix + "/"
+			return strings.Join(parts, ";")
+		}
+		return raw
+	}
+	return raw
 }
 
 // cancel asks the host to abandon a request.

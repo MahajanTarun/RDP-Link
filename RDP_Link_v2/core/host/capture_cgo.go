@@ -70,7 +70,12 @@ func (a *Agent) httpFrameLoop() {
 	ticker := time.NewTicker(90 * time.Millisecond)
 	defer ticker.Stop()
 	var lastErr string
-	for range ticker.C {
+	for {
+		select {
+		case <-a.done:
+			return
+		case <-ticker.C:
+		}
 		var frame *image.RGBA
 		var err error
 		if a.TestPattern {

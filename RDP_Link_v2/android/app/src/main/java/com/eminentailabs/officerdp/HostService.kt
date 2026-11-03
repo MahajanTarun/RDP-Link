@@ -576,10 +576,17 @@ class HostService : Service() {
                     Response.Status.NOT_FOUND, "text/plain", "not found"
                 )
             }
-            return newFixedLengthResponse(
+            val response = newFixedLengthResponse(
                 Response.Status.OK, "application/octet-stream",
                 FileInputStream(file), file.length()
             )
+            // Downloads must not render inline; strip quotes from the name so
+            // the header stays valid.
+            response.addHeader(
+                "Content-Disposition",
+                "attachment; filename=\"${file.name.replace("\"", "")}\""
+            )
+            return response
         }
 
         private fun handleUpload(session: IHTTPSession): Response {

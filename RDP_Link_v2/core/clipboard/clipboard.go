@@ -1,3 +1,5 @@
+//go:build !windows || !cgo
+
 package clipboard
 
 import (
@@ -21,6 +23,8 @@ func Read() string {
 			cmd = exec.Command("xsel", "--clipboard", "--output")
 		}
 	case "windows":
+		// Only reached in a build without cgo; the cgo build uses the
+		// Win32 clipboard directly.
 		cmd = exec.Command("powershell", "-NoProfile", "-Command", "Get-Clipboard")
 	}
 	if cmd == nil {

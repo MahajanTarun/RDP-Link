@@ -13,6 +13,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -64,6 +65,8 @@ type Agent struct {
 
 	clipMu   sync.Mutex
 	clipText string
+	// clipReadAt is when the operating system clipboard was last read.
+	clipReadAt time.Time
 
 	recordMu     sync.Mutex
 	recording    bool
@@ -114,6 +117,8 @@ const (
 	maxSessions = 64
 	// sessionCookie is the name of the browser session cookie.
 	sessionCookie = "rdplink_sid"
+	// clipboardCacheTTL is how long a clipboard read is reused.
+	clipboardCacheTTL = 750 * time.Millisecond
 )
 
 func New(peerID, alias, password string, port int) *Agent {
@@ -133,6 +138,10 @@ func New(peerID, alias, password string, port int) *Agent {
 // RelaySecret returns the per-process secret that marks relay-forwarded
 // requests. It is handed to the in-process relay client.
 func (a *Agent) RelaySecret() string { return a.relaySecret }
+
+// Done is closed when the agent stops. Background workers use it to shut
+// down together with the host.
+func (a *Agent) Done() <-chan struct{} { return a.done }
 
 // FramePNG returns the latest frame as PNG, encoding lazily on the first
 // request for each captured frame.
@@ -208,6 +217,12 @@ func (a *Agent) FrameJPEG() ([]byte, string, uint64) {
 // The access password is never accepted as a URL query parameter, so it does
 // not end up in proxy logs, browser history or the process list.
 func (a *Agent) auth(w http.ResponseWriter, r *http.Request) bool {
+	// Every endpoint goes through here, so the origin check lives here and
+	// not in a wrapper that the device bridge could bypass.
+	if !sameOrigin(r) {
+		http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+		return false
+	}
 	ip := clientIP(r, a.relaySecret)
 	if a.throttled(ip) {
 		http.Error(w, "too many attempts", http.StatusTooManyRequests)
@@ -293,6 +308,10 @@ func (a *Agent) handleSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method", http.StatusMethodNotAllowed)
 		return
 	}
+	if !sameOrigin(r) {
+		http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+		return
+	}
 	ip := clientIP(r, a.relaySecret)
 	if a.throttled(ip) {
 		http.Error(w, "too many attempts", http.StatusTooManyRequests)
@@ -360,16 +379,10 @@ func sameOrigin(r *http.Request) bool {
 func (a *Agent) Serve() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/session", a.handleSession)
-	// auth accepts the access password, a session cookie or a session token.
-	// State-changing requests additionally have to come from this host's own
-	// pages, so another site cannot drive the host with a leaked password.
-	auth := func(w http.ResponseWriter, r *http.Request) bool {
-		if !sameOrigin(r) {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return false
-		}
-		return a.auth(w, r)
-	}
+	// auth accepts the access password, a session cookie or a session token,
+	// and rejects cross-origin requests. It lives on the Agent so that the
+	// device bridge endpoints are covered as well.
+	auth := a.auth
 	mux.HandleFunc("/info", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(w, r) {
 			return
@@ -533,9 +546,10 @@ func (a *Agent) Serve() error {
 			return
 		}
 		// The file is a download, not a page: never let the browser render
-		// it inline.
-		w.Header().Set("Content-Disposition",
-			"attachment; filename=\""+sanitizeName(r.URL.Query().Get("name"))+"\"")
+		// it inline. mime.FormatMediaType quotes the name safely, even when
+		// it contains a double quote.
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment",
+			map[string]string{"filename": sanitizeName(r.URL.Query().Get("name"))}))
 		http.ServeFile(w, r, path)
 	})
 	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
@@ -730,31 +744,36 @@ func wanIP() string {
 	return string(buf[:n])
 }
 
+// GetClipboard returns the host clipboard.
+//
+// The operating system clipboard is read on demand and cached for a moment.
+// A background poll every 500 ms would spawn a helper process twice a second
+// on every platform (powershell.exe on Windows) even when no guest is
+// connected.
 func (a *Agent) GetClipboard() string {
 	a.clipMu.Lock()
-	defer a.clipMu.Unlock()
-	return a.clipText
+	if !a.clipReadAt.IsZero() && time.Since(a.clipReadAt) < clipboardCacheTTL {
+		text := a.clipText
+		a.clipMu.Unlock()
+		return text
+	}
+	a.clipMu.Unlock()
+
+	text := clipboard.Read()
+	a.clipMu.Lock()
+	a.clipText = text
+	a.clipReadAt = time.Now()
+	a.clipMu.Unlock()
+	return text
 }
 
+// SetClipboard writes text to the host clipboard and to the cache.
 func (a *Agent) SetClipboard(text string) {
 	a.clipMu.Lock()
 	a.clipText = text
+	a.clipReadAt = time.Now()
 	a.clipMu.Unlock()
 	clipboard.Write(text)
-}
-
-func (a *Agent) StartClipboardSync() {
-	go func() {
-		for {
-			t := clipboard.Read()
-			a.clipMu.Lock()
-			if t != a.clipText {
-				a.clipText = t
-			}
-			a.clipMu.Unlock()
-			time.Sleep(500 * time.Millisecond)
-		}
-	}()
 }
 
 func (a *Agent) InboxDir() string {

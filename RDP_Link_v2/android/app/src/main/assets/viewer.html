@@ -297,6 +297,16 @@
       <p class="muted">Only ports allow-listed with --forward are reachable.</p>
     </section>
 
+    <section id="secClipboard">
+      <h3>Clipboard</h3>
+      <div class="row">
+        <button id="clipGet">Copy from host</button>
+        <button id="clipSend">Send to host</button>
+      </div>
+      <p class="muted" id="clipState">Two-way clipboard. Pasting into the page
+        also sends the text to the host.</p>
+    </section>
+
     <section id="secFiles">
       <h3>Files</h3>
       <div class="row">
@@ -605,9 +615,10 @@
   });
 
   // -- clipboard -----------------------------------------------------------
-  $('btnClip').addEventListener('click', async () => {
+  async function copyFromHost() {
     try {
       const res = await fetch('clipboard', { headers: authHeaders(), cache: 'no-store' });
+      if (!res.ok) throw new Error('clipboard ' + res.status);
       const data = await res.json();
       const text = data.text || '';
       try {
@@ -617,6 +628,38 @@
         toast(text ? 'Host clipboard: ' + text.slice(0, 40) : 'Host clipboard is empty');
       }
     } catch (_) { toast('Clipboard unavailable'); }
+  }
+
+  async function sendToHost(text) {
+    if (!text) return false;
+    const res = await post('clipboard', { text });
+    const ok = !!(res && res.ok);
+    toast(ok ? 'Clipboard sent to host' : 'Could not send the clipboard');
+    const state = $('clipState');
+    if (state) state.textContent = ok ? 'Sent to host' : 'Send failed';
+    return ok;
+  }
+
+  $('btnClip').addEventListener('click', copyFromHost);
+  $('clipGet').addEventListener('click', copyFromHost);
+  $('clipSend').addEventListener('click', async () => {
+    let text = '';
+    try {
+      text = await navigator.clipboard.readText();
+    } catch (_) {
+      text = prompt('Text to send to the host:') || '';
+    }
+    await sendToHost(text);
+  });
+
+  // Pasting into the page forwards the clipboard to the host, which is what
+  // a remote-desktop user expects.
+  document.addEventListener('paste', (ev) => {
+    if (!connected) return;
+    const inField = ev.target && (ev.target.tagName === 'INPUT' || ev.target.tagName === 'TEXTAREA');
+    if (inField) return;
+    const text = ev.clipboardData && ev.clipboardData.getData('text');
+    if (text) { ev.preventDefault(); sendToHost(text); }
   });
 
   // -- view controls -------------------------------------------------------

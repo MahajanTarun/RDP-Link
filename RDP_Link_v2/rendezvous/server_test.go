@@ -280,6 +280,22 @@ func TestTunnelRequiresSignature(t *testing.T) {
 	}
 }
 
+func TestScopeSetCookie(t *testing.T) {
+	raw := "rdplink_sid=abc123; Path=/; Max-Age=43200; HttpOnly; SameSite=Strict"
+	got := scopeSetCookie(raw, "/t/123456789")
+	if !strings.Contains(got, "Path=/t/123456789/") {
+		t.Fatalf("cookie path not scoped: %q", got)
+	}
+	if !strings.Contains(got, "HttpOnly") || !strings.Contains(got, "SameSite=Strict") {
+		t.Fatalf("cookie flags were lost: %q", got)
+	}
+	// A cookie that is already scoped is left alone.
+	scoped := scopeSetCookie(raw, "/t/123456789")
+	if again := scopeSetCookie(scoped, "/t/999999999"); again != scoped {
+		t.Fatalf("scoped cookie was rewritten: %q -> %q", scoped, again)
+	}
+}
+
 func TestHealth(t *testing.T) {
 	s := NewServer()
 	ts := httptest.NewServer(s)
@@ -298,11 +314,27 @@ func TestPairing(t *testing.T) {
 	s := NewServer()
 	ts := httptest.NewServer(s)
 	defer ts.Close()
-	body := `{"from":"a","to":"b","code":"123456"}`
-	resp, _ := http.Post(ts.URL+"/pair/start", "application/json", strings.NewReader(body))
+	peer := newTestPeer(t)
+	body := []byte(`{"from":"a","to":"b","code":"123456"}`)
+
+	// Unsigned pairing is refused.
+	anon, err := http.Post(ts.URL+"/pair/start", "application/json",
+		strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anon.Body.Close()
+	if anon.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unsigned pairing must fail, got %d", anon.StatusCode)
+	}
+
+	resp, err := http.DefaultClient.Do(peer.signed(t, http.MethodPost, ts.URL+"/pair/start", body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	resp.Body.Close()
-	vbody := `{"from":"a","to":"b","code":"123456"}`
-	vresp, err := http.Post(ts.URL+"/pair/verify", "application/json", strings.NewReader(vbody))
+
+	vresp, err := http.DefaultClient.Do(peer.signed(t, http.MethodPost, ts.URL+"/pair/verify", body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +343,7 @@ func TestPairing(t *testing.T) {
 		t.Fatalf("verify %d", vresp.StatusCode)
 	}
 	// second verify should fail
-	vresp2, err := http.Post(ts.URL+"/pair/verify", "application/json", strings.NewReader(vbody))
+	vresp2, err := http.DefaultClient.Do(peer.signed(t, http.MethodPost, ts.URL+"/pair/verify", body))
 	if err != nil {
 		t.Fatal(err)
 	}

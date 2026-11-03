@@ -58,11 +58,20 @@ to one lookup per two seconds per address.
 `/peers` returns the peer IDs and aliases to any signed caller. The LAN
 addresses are only returned when the request carries the relay's admin token
 (`--admin-token`, `RDPLINK_ADMIN_TOKEN`), so an unprivileged caller cannot
-map the network.
+map the network. `/pair/start` and `/pair/verify` need a signature too.
+
+The in-memory tables are bounded, so a caller cannot exhaust the server:
+10,000 pinned keys (least recently used evicted), 1,024 pending pairings,
+10,000 peer records (entries older than a day are swept).
 
 ## Hardening already in place
 
 - Password comparison is constant-time on every platform.
+- `Origin` is checked inside the shared auth path, so the device bridge
+  endpoints and `/session` are covered as well as the screen and input routes.
+- Through the relay, the host's session cookie is narrowed to
+  `Path=/t/<peerId>/`, so two devices on the same relay never share or
+  overwrite each other's cookie.
 - Failed logins are throttled per address, and the throttle table is bounded
   (4096 entries) so it cannot be used to exhaust memory.
 - `X-Forwarded-For` is only believed when the request carries the per-process
@@ -90,6 +99,9 @@ map the network.
 - A relay guest can see the host's LAN address through `/resolve`; the address
   is only returned for peers that are online.
 - Session recording captures the raw H.264 stream without encryption at rest.
+- The host clipboard is read on demand (cached for 750 ms) instead of polled in
+  the background, which keeps helper processes from running when nobody is
+  connected.
 - The password is a shared secret between the host and the guest. There is no
   per-user identity on the host side yet.
 

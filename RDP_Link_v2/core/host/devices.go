@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -194,10 +195,15 @@ func (a *Agent) handleMicWS(w http.ResponseWriter, r *http.Request) {
 	if !a.auth(w, r) {
 		return
 	}
+	// ffplay plays the stream directly; when it is missing ffmpeg does the
+	// decoding and writes to the platform's default output.
 	player := "ffplay"
-	if !haveTool(player) && !haveTool("ffmpeg") {
-		http.Error(w, "no audio player on the host", http.StatusServiceUnavailable)
-		return
+	if !haveTool(player) {
+		if !haveTool("ffmpeg") {
+			http.Error(w, "no audio player on the host", http.StatusServiceUnavailable)
+			return
+		}
+		player = "ffmpeg"
 	}
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -205,11 +211,14 @@ func (a *Agent) handleMicWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
-	cmd := exec.Command(player, "-hide_banner", "-loglevel", "quiet",
-		"-nodisp", "-autoexit", "-f", "webm", "-i", "pipe:0")
+	var cmd *exec.Cmd
 	if player == "ffmpeg" {
+		// #nosec G204 -- ffmpeg and the output format come from a fixed list.
 		cmd = exec.Command("ffmpeg", "-hide_banner", "-loglevel", "quiet",
-			"-f", "webm", "-i", "pipe:0", "-f", "audiotoolbox", "-")
+			"-f", "webm", "-i", "pipe:0", "-f", defaultAudioOutput(), "-")
+	} else {
+		cmd = exec.Command("ffplay", "-hide_banner", "-loglevel", "quiet",
+			"-nodisp", "-autoexit", "-f", "webm", "-i", "pipe:0")
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -234,6 +243,18 @@ func (a *Agent) handleMicWS(w http.ResponseWriter, r *http.Request) {
 	_ = stdin.Close()
 }
 
+// defaultAudioOutput is the ffmpeg output device for the platform.
+func defaultAudioOutput() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "audiotoolbox"
+	case "windows":
+		return "waveout"
+	default:
+		return "pulse"
+	}
+}
+
 // ---- camera: host -> guest (MJPEG) ---------------------------------------
 
 func (a *Agent) handleCamera(w http.ResponseWriter, r *http.Request) {
@@ -245,20 +266,31 @@ func (a *Agent) handleCamera(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	device := a.CameraDevice
-	if device == "" {
-		device = "0"
-	}
-	format := "avfoundation"
-	input := device
 	args := []string{"-hide_banner", "-loglevel", "error"}
 	switch {
 	case device == "testsrc":
 		// Synthetic source for CI/validation without a camera or permission.
 		args = append(args, "-re", "-f", "lavfi", "-i", "testsrc=size=640x480:rate=15")
 	case strings.HasPrefix(device, "/dev/"):
-		args = append(args, "-f", "v4l2", "-i", input)
+		args = append(args, "-f", "v4l2", "-i", device)
+	case runtime.GOOS == "linux":
+		// The default Linux capture device is the first video node.
+		if device == "" {
+			device = "/dev/video0"
+		}
+		args = append(args, "-f", "v4l2", "-i", device)
+	case runtime.GOOS == "windows":
+		// DirectShow takes the device name, for example "HD Webcam".
+		if device == "" {
+			device = "video=0"
+		}
+		args = append(args, "-f", "dshow", "-i", device)
 	default:
-		args = append(args, "-f", format, "-framerate", "30", "-i", input)
+		// macOS: the first AVFoundation capture device.
+		if device == "" {
+			device = "0"
+		}
+		args = append(args, "-f", "avfoundation", "-framerate", "30", "-i", device)
 	}
 	args = append(args, "-vf", "scale=640:-2", "-r", "15", "-q:v", "7",
 		"-f", "mpjpeg", "-")
