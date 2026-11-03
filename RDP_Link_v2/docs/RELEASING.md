@@ -9,6 +9,24 @@ Version is `0.2.0` in:
 
 Bump all four together.
 
+## Build environment
+
+Large, regenerable toolchains and caches live in the git-ignored `.build/`
+directory inside this repo (on the external SSD):
+
+```
+.build/toolchains/Wine Staging.app   Windows app builds (PyInstaller via Wine)
+.build/toolchains/python-win         Windows Python 3.12 used by that build
+.build/cache/go-build                Go build cache
+.build/tmp                           TMPDIR for PyInstaller and helpers
+.build/wineprefix/officerdp          Wine prefix
+```
+
+`packaging/env.sh` exports these paths (`TMPDIR`, `GOCACHE`, `WINEPREFIX`,
+`WINE`, `PYROOT`) and is sourced automatically by the build and test scripts.
+Override any of them from the environment if needed. This keeps the system
+volume free; the artifacts themselves stay in `dist/`.
+
 ## Android
 
 The release build uses a real keystore when these environment variables are
@@ -67,12 +85,22 @@ bash packaging/windows/build-installer.sh
 ```
 
 The script statically links the GCC runtime, so the shipped `.exe` needs no
-MinGW DLLs. The optional native launcher `rdp-link.exe` is only produced on a
-real Windows host:
+MinGW DLLs. The native launcher `rdp-link.exe` (the primary Windows GUI) is
+built with PyInstaller:
+
+```sh
+# macOS/Linux, through Wine (no Windows machine needed)
+bash packaging/build-windows-app-wine.sh
+```
 
 ```powershell
+# on a real Windows host
 powershell -File packaging/build-windows.ps1
 ```
+
+`build-installer.sh` bundles `rdp-link.exe` into the NSIS installer when it is
+present; Start-menu and desktop shortcuts then launch the desktop app, and the
+browser control panel stays available as a fallback.
 
 ## Linux
 

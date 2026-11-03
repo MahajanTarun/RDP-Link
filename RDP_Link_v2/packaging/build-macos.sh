@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Build caches and temp files live in .build/ (SSD, git-ignored).
+# shellcheck source=/dev/null
+source "$ROOT/packaging/env.sh"
 APP_DIR="$ROOT/app"
 DIST="$ROOT/dist/macos"
 mkdir -p "$DIST"
@@ -17,6 +20,10 @@ echo "==> Build Python app bundle"
 
 APP_SRC="$APP_DIR/dist/RDP Link.app"
 APP_DST="$DIST/Office RDP.app"
+# A running copy keeps the old bundle busy and codesign then fails with
+# "Write permissions error", so stop any instance before replacing the app.
+pkill -f "$APP_DST/Contents/MacOS" >/dev/null 2>&1 || true
+sleep 1
 rm -rf "$APP_DST"
 cp -R "$APP_SRC" "$APP_DST"
 

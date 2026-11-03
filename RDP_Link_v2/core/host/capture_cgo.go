@@ -61,7 +61,13 @@ func (a *Agent) httpFrameLoop(display int) {
 	defer ticker.Stop()
 	var lastErr string
 	for range ticker.C {
-		img, err := screenshot.CaptureDisplay(display)
+		var frame *image.RGBA
+		var err error
+		if a.TestPattern {
+			frame = testPatternFrame(time.Now())
+		} else {
+			frame, err = screenshot.CaptureDisplay(display)
+		}
 		if err != nil {
 			if err.Error() != lastErr {
 				lastErr = err.Error()
@@ -70,14 +76,14 @@ func (a *Agent) httpFrameLoop(display int) {
 			continue
 		}
 		var buf bytes.Buffer
-		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 72}); err != nil {
+		if err := jpeg.Encode(&buf, frame, &jpeg.Options{Quality: 72}); err != nil {
 			continue
 		}
 		h := fnv.New64a()
 		h.Write(buf.Bytes())
 		a.mu.Lock()
 		a.frameJPG = buf.Bytes()
-		a.raw = img
+		a.raw = frame
 		a.frameSeq++
 		a.frameHash = h.Sum64()
 		a.mu.Unlock()

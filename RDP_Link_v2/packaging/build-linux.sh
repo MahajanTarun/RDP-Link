@@ -10,6 +10,9 @@
 # known to crash the Go toolchain, so it is not used.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Build caches and temp files live in .build/ (SSD, git-ignored).
+# shellcheck source=/dev/null
+source "$ROOT/packaging/env.sh"
 DIST="$ROOT/dist/linux"
 mkdir -p "$DIST/bin"
 

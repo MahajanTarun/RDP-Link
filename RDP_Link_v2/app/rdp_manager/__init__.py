@@ -6,8 +6,8 @@ Design principles:
 - FreeRDP is the engine; this app is a thin, fast launcher around it
 """
 
-__version__ = "4.5.0"
-APP_NAME = "RDP Link"
+__version__ = "0.2.0"
+APP_NAME = "Office RDP"
 BUNDLE_ID = "com.eminentailabs.rdplink"
 
 # Keychain/secret service name. Deliberately unchanged from the app's

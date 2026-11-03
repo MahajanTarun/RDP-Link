@@ -11,6 +11,7 @@ from .. import APP_NAME, secrets, logutil
 from ..connection import ConnectionController, shell_quote_cmd
 from ..deploy import copy_setup_command, deploy_receivers
 from ..profiles import ProfileStore, normalize
+from ..viewer_launch import viewer_argv
 from .dialogs import PasswordPrompt
 from .editor import ProfileEditor
 from .office_panel import OfficePanel
@@ -23,8 +24,8 @@ class UbuntuRDPApp:
 
         self.root = tk.Tk()
         self.root.title(APP_NAME)
-        self.root.geometry("1000x720")
-        self.root.minsize(880, 640)
+        self.root.geometry("1040x860")
+        self.root.minsize(920, 700)
 
         self._status_var = tk.StringVar(value="Ready")
         self._office_var = tk.StringVar(value="Office ID: run office-rdp --id")
@@ -51,39 +52,70 @@ class UbuntuRDPApp:
             style.theme_use("clam")
         except tk.TclError:
             pass
-        style.configure("Treeview", rowheight=36, font=("TkDefaultFont", 13),
-                        fieldbackground="#ffffff", borderwidth=0)
+
+        bg, surface, border = "#f4f6fb", "#ffffff", "#e2e8f0"
+        text, muted, accent = "#0f172a", "#64748b", "#2563eb"
+
+        self.root.configure(bg=bg)
+        style.configure(".", background=bg, foreground=text,
+                        font=("TkDefaultFont", 12))
+        style.configure("TFrame", background=bg)
+        style.configure("TLabel", background=bg, foreground=text)
+        style.configure("Muted.TLabel", background=bg, foreground=muted)
+        style.configure("Title.TLabel", background=bg, foreground=text,
+                        font=("TkDefaultFont", 24, "bold"))
+        style.configure("Subtitle.TLabel", background=bg, foreground=muted,
+                        font=("TkDefaultFont", 11))
+        style.configure("TSeparator", background=border)
+
+        style.configure("Treeview", rowheight=38, font=("TkDefaultFont", 13),
+                        background=surface, fieldbackground=surface,
+                        foreground=text, borderwidth=0)
+        style.map("Treeview",
+                  background=[("selected", "#dbeafe")],
+                  foreground=[("selected", text)])
         style.configure("Treeview.Heading", font=("TkDefaultFont", 11, "bold"),
-                        padding=(6, 6))
-        style.configure("TButton", padding=(12, 6))
-        style.configure("Accent.TButton", background="#0a84ff",
-                        foreground="#ffffff")
+                        background="#f8fafc", foreground="#475569",
+                        relief="flat", padding=(8, 8))
+        style.map("Treeview.Heading", background=[("active", "#f1f5f9")])
+
+        style.configure("TEntry", fieldbackground=surface, foreground=text,
+                        bordercolor=border, lightcolor=border, darkcolor=border,
+                        padding=(6, 5))
+        style.configure("TCombobox", fieldbackground=surface, foreground=text,
+                        bordercolor=border, arrowcolor=muted, padding=(6, 4))
+
+        style.configure("TButton", padding=(12, 6), background=surface,
+                        foreground=text, bordercolor=border, relief="flat")
+        style.map("TButton",
+                  background=[("pressed", "#e2e8f0"), ("active", "#f1f5f9")])
+        style.configure("Accent.TButton", background=accent, foreground="#ffffff",
+                        bordercolor=accent)
         style.map("Accent.TButton",
-                  background=[("disabled", "#c9c9c9"), ("pressed", "#0066cc"),
-                              ("active", "#3395ff")])
-        style.configure("Danger.TButton", background="#e74c3c",
-                        foreground="#ffffff")
+                  background=[("disabled", "#bfdbfe"), ("pressed", "#1e40af"),
+                              ("active", "#1d4ed8")],
+                  foreground=[("disabled", "#ffffff")])
+        style.configure("Danger.TButton", background="#ef4444",
+                        foreground="#ffffff", bordercolor="#ef4444")
         style.map("Danger.TButton",
-                  background=[("disabled", "#c9c9c9"), ("pressed", "#b93a2d"),
-                              ("active", "#f06a5d")])
+                  background=[("disabled", "#fecaca"), ("pressed", "#b91c1c"),
+                              ("active", "#dc2626")])
 
     # -- UI -------------------------------------------------------------------
 
     def _build_ui(self):
-        outer = ttk.Frame(self.root, padding=(18, 16))
+        outer = ttk.Frame(self.root, padding=(20, 18))
         outer.pack(fill="both", expand=True)
 
         header = ttk.Frame(outer)
         header.pack(fill="x")
         title_box = ttk.Frame(header)
         title_box.pack(side="left")
-        ttk.Label(title_box, text="🔗  RDP Link",
-                  font=("TkDefaultFont", 22, "bold")).pack(anchor="w")
-        ttk.Label(title_box,
-                  text="Lightweight remote access",
-                  foreground="#777").pack(anchor="w")
-        ttk.Button(header, text="＋  Add", command=self.add_profile,
-                   style="Accent.TButton").pack(side="right")
+        ttk.Label(title_box, text="Office RDP", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(title_box, text="Remote access to your own devices",
+                  style="Subtitle.TLabel").pack(anchor="w", pady=(2, 0))
+        ttk.Button(header, text="+  Add device", command=self.add_profile,
+                   style="Accent.TButton").pack(side="right", pady=(6, 0))
         self._office_panel = OfficePanel(outer, status_callback=self.set_status)
         self._office_panel.pack(fill="x", pady=(12, 0))
         ttk.Separator(outer).pack(fill="x", pady=(12, 10))
@@ -127,7 +159,8 @@ class UbuntuRDPApp:
         self.tree.column("routing", width=230, anchor="w")
         self.tree.column("state", width=110, anchor="w", stretch=False)
         self.tree.tag_configure("connected", background="#e8f7ee",
-                                foreground="#1a7f37")
+                                foreground="#047857")
+        self.tree.tag_configure("odd", background="#f8fafc")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<Double-1>", self._on_double_click)
         self.tree.bind("<Return>", lambda e: self.toggle_selected())
@@ -215,15 +248,15 @@ class UbuntuRDPApp:
     def refresh_list(self):
         selected = self.tree.selection()
         self.tree.delete(*self.tree.get_children())
-        for p in self.store.profiles:
+        for index, p in enumerate(self.store.profiles):
             active = self.controller.is_active(p["id"])
             pw = "🔑 " if p.get("savePassword") and secrets.store_has(p["id"]) else ""
             state = "● Connected" if active else ""
             chips = self.controller.bridges.device_chips(p["id"])
             if chips:
                 state = f"{state} {chips}".strip()
-            self.tree.insert("", "end", iid=p["id"],
-                             tags=("connected",) if active else (),
+            tag = "connected" if active else ("odd" if index % 2 else "even")
+            self.tree.insert("", "end", iid=p["id"], tags=(tag,),
                              values=(
                 f'{pw}{p["name"]}',
                 f'{p["username"]}  •  {p["host"]}:{p["port"]}',
@@ -428,15 +461,8 @@ class UbuntuRDPApp:
             messagebox.showerror("Office RDP", str(e))
 
     def _open_office_viewer(self, addr, password=None):
-        viewer = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "office_viewer.py")
-        if not os.path.exists(viewer):
-            messagebox.showerror("Office RDP", "office_viewer.py not found")
-            return
         try:
-            args = ["python3", viewer, addr]
-            if password:
-                args += ["--password", password]
-            subprocess.Popen(args)
+            subprocess.Popen(viewer_argv(addr, password))
         except Exception as e:
             messagebox.showerror("Office RDP", str(e))
 
@@ -445,15 +471,8 @@ class UbuntuRDPApp:
         if not url:
             return
         password = simpledialog.askstring("Office RDP", "Password (optional):", show="*")
-        viewer = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "office_viewer.py")
-        if not os.path.exists(viewer):
-            messagebox.showerror("Office RDP", "office_viewer.py not found")
-            return
         try:
-            args = ["python3", viewer, url]
-            if password:
-                args += ["--password", password]
-            subprocess.Popen(args)
+            subprocess.Popen(viewer_argv(url, password))
         except Exception as e:
             messagebox.showerror("Office RDP", str(e))
 
@@ -489,7 +508,7 @@ class UbuntuRDPApp:
                 return
             if not addr.startswith("http"):
                 addr = "http://" + addr
-            subprocess.Popen(["python3", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "office_viewer.py"), addr])
+            subprocess.Popen(viewer_argv(addr))
             win.destroy()
         ttk.Button(win, text="Connect", command=connect).pack()
 

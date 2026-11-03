@@ -56,6 +56,23 @@ def _cli(argv):
 
 def main():
     argv = sys.argv[1:]
+    # Viewer mode: the frozen app re-enters itself so the guest window ships
+    # inside the same bundle on every platform.
+    if "--viewer" in argv:
+        rest = [a for a in argv if a != "--viewer"]
+        sys.argv = [sys.argv[0]] + rest
+        try:
+            from office_viewer import main as viewer_main
+        except ImportError:
+            import importlib.util
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "office_viewer.py")
+            spec = importlib.util.spec_from_file_location("office_viewer", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            viewer_main = module.main
+        viewer_main()
+        return
     # Device watchdog mode: never load the GUI, spawn & supervise one child.
     if "--bridge-watchdog" in argv:
         from rdp_manager import watchdog

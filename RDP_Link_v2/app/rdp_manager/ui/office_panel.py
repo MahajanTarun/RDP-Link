@@ -10,11 +10,14 @@ import os
 import random
 import shutil
 import subprocess
+import sys
 import threading
 import tkinter as tk
 import urllib.parse
 import urllib.request
 from tkinter import messagebox, simpledialog, ttk
+
+from ..viewer_launch import viewer_argv
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "office-rdp")
 GUI_CONFIG = os.path.join(CONFIG_DIR, "gui.json")
@@ -27,14 +30,26 @@ def find_office_binary():
         if path:
             return path
     here = os.path.dirname(os.path.abspath(__file__))
-    root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
-    candidates = [
-        os.path.join(root, "dist", "macos", "Office RDP.app", "Contents", "MacOS", "office-rdp"),
-        os.path.join(root, "dist", "windows", "office-rdp.exe"),
-        os.path.join(root, "dist", "linux", "bin", "office-rdp-linux"),
-        os.path.join(root, "office-rdp"),
+    app_root = os.path.dirname(os.path.dirname(here))
+    repo_root = os.path.dirname(app_root)
+    # Only probe the build tree for the platform we are running on: the repo
+    # may also hold Windows/ Linux artifacts that cannot execute here.
+    candidates = []
+    if sys.platform == "win32":
+        candidates.append(os.path.join(repo_root, "dist", "windows", "office-rdp.exe"))
+    elif sys.platform == "darwin":
+        candidates.append(os.path.join(
+            repo_root, "dist", "macos", "Office RDP.app", "Contents", "MacOS", "office-rdp"))
+    else:
+        candidates.append(os.path.join(repo_root, "dist", "linux", "bin", "office-rdp-linux"))
+    candidates += [
+        os.path.join(repo_root, "office-rdp"),
         "/tmp/office-rdp",
     ]
+    # Installed bundles keep the agent next to the launcher executable.
+    if getattr(sys, "frozen", False):
+        candidates.insert(0, os.path.join(os.path.dirname(sys.executable), "office-rdp.exe"))
+        candidates.insert(0, os.path.join(os.path.dirname(sys.executable), "office-rdp"))
     for candidate in candidates:
         if os.path.exists(candidate):
             return candidate
@@ -89,8 +104,17 @@ class OfficePanel(ttk.Frame):
                         font=("TkDefaultFont", 12, "bold"))
         style.configure("Peer.TLabel", background="#ffffff",
                         font=("TkFixedFont", 24, "bold"))
-        style.configure("Primary.TButton", padding=(14, 7))
-        style.configure("Ghost.TButton", padding=(10, 5))
+        style.configure("Primary.TButton", padding=(14, 7),
+                        background="#2563eb", foreground="#ffffff",
+                        bordercolor="#2563eb", relief="flat")
+        style.map("Primary.TButton",
+                  background=[("disabled", "#bfdbfe"), ("pressed", "#1e40af"),
+                              ("active", "#1d4ed8")],
+                  foreground=[("disabled", "#ffffff")])
+        style.configure("Ghost.TButton", padding=(10, 5), relief="flat",
+                        background="#ffffff", bordercolor="#e2e8f0")
+        style.map("Ghost.TButton",
+                  background=[("pressed", "#e2e8f0"), ("active", "#f8fafc")])
 
     def _card(self, parent, title):
         outer = tk.Frame(parent, bg="#ffffff", highlightbackground="#e2e8f0",
@@ -147,7 +171,7 @@ class OfficePanel(ttk.Frame):
         self.display_box = ttk.Combobox(row, textvariable=self.display, width=3, state="readonly")
         self.display_box.pack(side="left", padx=(6, 12))
         ttk.Label(row, text="Port", style="CardMuted.TLabel").pack(side="left")
-        ttk.Entry(row, textvariable=self.port, width=6).pack(side="left", padx=(6, 0))
+        ttk.Entry(row, textvariable=self.port, width=7).pack(side="left", padx=(6, 0))
 
         ttk.Label(body, text="Rendezvous (optional)", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
         ttk.Entry(body, textvariable=self.rendezvous).pack(fill="x", pady=(2, 0))
@@ -181,7 +205,7 @@ class OfficePanel(ttk.Frame):
                    command=self.connect).pack(anchor="w", pady=(10, 0))
 
         ttk.Label(body, text="Recent devices", style="CardMuted.TLabel").pack(anchor="w", pady=(12, 0))
-        self.recent_box = tk.Listbox(body, height=5, activestyle="none",
+        self.recent_box = tk.Listbox(body, height=4, activestyle="none",
                                      borderwidth=0, highlightthickness=1,
                                      highlightbackground="#e2e8f0")
         self.recent_box.pack(fill="both", expand=True, pady=(2, 0))
@@ -349,15 +373,11 @@ class OfficePanel(ttk.Frame):
         return addr
 
     def _open_viewer(self, address, password):
-        here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        viewer = os.path.join(here, "office_viewer.py")
-        if not os.path.exists(viewer):
-            messagebox.showerror("Office RDP", "office_viewer.py not found.")
+        try:
+            subprocess.Popen(viewer_argv(address, password))
+        except Exception as exc:
+            messagebox.showerror("Office RDP", f"Could not open viewer: {exc}")
             return
-        args = ["python3", viewer, address]
-        if password:
-            args += ["--password", password]
-        subprocess.Popen(args)
         self.status_callback(f"Opening viewer for {address}")
 
     def _remember(self, address):

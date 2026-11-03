@@ -12,10 +12,13 @@ untouched.
 
 | | Host | Guest |
 | --- | --- | --- |
-| macOS | live | browser + Tk viewer |
-| Linux | live | Tk viewer |
-| Windows | built (CGO, GDI capture) | browser control panel |
-| Android | live (MediaProjection) | live full-screen viewer |
+| macOS | live | desktop viewer (`rdp-link`) + browser |
+| Linux | live | desktop viewer (`rdp-link`) + browser |
+| Windows | live via `--test-pattern` under Wine; real GDI capture needs Windows | `rdp-link.exe` (validated under Wine) + browser |
+| Android | live (MediaProjection) | full-screen `ViewerActivity` + browser |
+
+Every host also serves the browser viewer at `http://<host>:<port>/`, so any
+device with a browser can be a guest without installing anything.
 
 See [`docs/VALIDATION.md`](docs/VALIDATION.md) for the full matrix, live
 evidence, and known limitations.
@@ -38,8 +41,11 @@ evidence, and known limitations.
 # Share this screen
 office-rdp --host --port 8088 --password <secret>
 
-# Control panel in the browser (recommended on Windows)
+# Control panel in the browser (works on every platform, no install)
 office-rdp --ui
+
+# Stream a synthetic test pattern instead of the screen (CI, headless, Wine)
+office-rdp --host --test-pattern --port 8088 --password <secret>
 
 # Check capture and input
 office-rdp --doctor
@@ -51,7 +57,9 @@ office-rdp-rendezvous --listen :8080
 
 A guest connects with any of:
 
-- the desktop viewer:
+- the desktop app: launch `rdp-link` (macOS/Linux) or `rdp-link.exe` (Windows)
+  and use **Connect to a device**
+- the viewer directly:
   `cd app && python3 office_viewer.py http://<host>:8088 --password <secret>`
 - a browser at `http://<host>:8088/` (password in the page, or `#pw=<secret>`)
 - the Android app: enter `host:port` (or `host:port/#pw=<secret>`) and Connect

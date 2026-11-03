@@ -20,6 +20,7 @@ fi
   --noconfirm \
   --clean \
   --name rdp-link \
+  --hidden-import office_viewer \
   --add-data "receiver:receiver" \
   --exclude-module pytest \
   --exclude-module unittest \

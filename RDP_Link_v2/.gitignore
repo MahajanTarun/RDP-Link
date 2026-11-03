@@ -1,5 +1,6 @@
 # Build output
 /dist/
+/.build/
 /office-rdp
 /office-rdp.exe
 /android/.gradle/

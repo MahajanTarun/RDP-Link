@@ -26,3 +26,23 @@ echo "==> Checking Python + Tkinter"
 "$PY" - <<'EOF'
 import sys, tkinter
 print(f"Python {sys.version.split()[0]}, Tk {tkinter.TkVersion}")
+EOF
+
+echo "==> Building app bundle with PyInstaller"
+rm -rf build dist
+"$PY" -m PyInstaller --noconfirm --clean "RDP Link.spec"
+
+APP="dist/RDP Link.app"
+if [[ ! -x "$APP/Contents/MacOS/RDP Link" ]]; then
+  echo "error: PyInstaller did not produce $APP" >&2
+  exit 1
+fi
+chmod +x "$APP/Contents/MacOS/RDP Link"
+echo "Built: $ROOT/$APP"
+
+if [[ "$NO_OPEN" == "0" ]]; then
+  mkdir -p "$HOME/Applications"
+  rm -rf "$HOME/Applications/RDP Link.app"
+  cp -R "$APP" "$HOME/Applications/"
+  open "$HOME/Applications/RDP Link.app"
+fi

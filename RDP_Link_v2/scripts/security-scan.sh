@@ -2,6 +2,8 @@
 # Security gates: static analysis, vulnerability scan, and shell lint.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+source "$ROOT/packaging/env.sh"
 cd "$ROOT"
 
 GO_BIN="${GO_BIN:-$(go env GOPATH)/bin}"
@@ -18,7 +20,8 @@ if [[ ! -x "$GOVULN" ]]; then
 fi
 
 echo "==> gosec (medium and above)"
-CGO_ENABLED=0 "$GOSEC" -quiet -severity medium ./...
+# .build/ holds toolchains and caches, never product code.
+CGO_ENABLED=0 "$GOSEC" -quiet -severity medium -exclude-dir=.build ./...
 
 echo "==> govulncheck"
 CGO_ENABLED=0 "$GOVULN" ./...

@@ -2,6 +2,8 @@
 # Build .deb packages for arm64 and amd64 from the Linux artifact set.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+source "$ROOT/packaging/env.sh"
 DIST="$ROOT/dist/linux"
 # Docker only shares $HOME reliably on macOS, and the repo path contains
 # spaces/apostrophes, so stage the package tree under $HOME.

@@ -46,6 +46,7 @@ func main() {
 	list := flag.Bool("list", false, "list peers")
 	alias := flag.String("alias", "", "override alias")
 	ui := flag.Bool("ui", false, "open the control panel in a browser")
+	testPattern := flag.Bool("test-pattern", false, "stream a synthetic test pattern instead of the screen")
 	flag.Parse()
 
 	if *version {
@@ -80,6 +81,7 @@ func main() {
 		}
 		ag := host.New(id.Formatted(), id.Alias, pw, *port)
 		ag.ReadOnly = *readOnly
+		ag.TestPattern = *testPattern
 		if err := ag.StartCapture(*display); err != nil {
 			fmt.Fprintln(os.Stderr, "capture:", err)
 		}

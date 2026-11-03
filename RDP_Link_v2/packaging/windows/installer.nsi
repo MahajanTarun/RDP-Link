@@ -1,12 +1,12 @@
 ; Office RDP Windows installer (NSIS)
 ;
-; Ships the Go agent binaries only. The Python launcher (rdp-link.exe) is
-; optional: packaging/windows/build-installer.sh generates
-; optional-launcher.nsh when the launcher exists, which adds it to the
-; payload. That build requires a Windows host with Python + PyInstaller.
+; Ships the Go agent plus the desktop launcher (rdp-link.exe) when it has been
+; built. The launcher is the primary GUI (host + guest); the browser control
+; panel remains available as a fallback and as a cross-platform guest.
 ;
-; The GUI on Windows is the browser control panel started with `--ui`, so a
-; full native toolkit is not required.
+; Build the launcher with packaging/build-windows-app-wine.sh (macOS/Linux) or
+; packaging/build-windows.ps1 (Windows); build-installer.sh adds it to the
+; payload through the generated optional-launcher.nsh include.
 
 !define APPNAME   "Office RDP"
 !define COMPANY   "Eminent AI Labs"
@@ -58,24 +58,31 @@ Section "Office RDP" SecMain
 
   WriteUninstaller "${UNINSTALLER}"
 
-  ; Start menu.
+  ; Start menu. The desktop launcher is the primary UI when it is bundled;
+  ; the browser control panel remains as a fallback.
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
-  CreateShortCut "$SMPROGRAMS\${APPNAME}\Office RDP.lnk" \
-    "$INSTDIR\office-rdp.exe" "--ui" "$INSTDIR\office-rdp.exe" 0
+  IfFileExists "$INSTDIR\rdp-link.exe" 0 launcher_missing
+    CreateShortCut "$SMPROGRAMS\${APPNAME}\Office RDP.lnk" \
+      "$INSTDIR\rdp-link.exe" "" "$INSTDIR\rdp-link.exe" 0
+    CreateShortCut "$DESKTOP\Office RDP.lnk" \
+      "$INSTDIR\rdp-link.exe" "" "$INSTDIR\rdp-link.exe" 0
+    Goto launcher_done
+  launcher_missing:
+    CreateShortCut "$SMPROGRAMS\${APPNAME}\Office RDP.lnk" \
+      "$INSTDIR\office-rdp.exe" "--ui" "$INSTDIR\office-rdp.exe" 0
+    CreateShortCut "$DESKTOP\Office RDP.lnk" \
+      "$INSTDIR\office-rdp.exe" "--ui" "$INSTDIR\office-rdp.exe" 0
+  launcher_done:
   CreateShortCut "$SMPROGRAMS\${APPNAME}\Share this screen.lnk" \
     "$INSTDIR\office-rdp.exe" "--host" "$INSTDIR\office-rdp.exe" 0
   CreateShortCut "$SMPROGRAMS\${APPNAME}\Rendezvous server.lnk" \
     "$INSTDIR\office-rdp-rendezvous.exe" "--listen :8080" \
     "$INSTDIR\office-rdp-rendezvous.exe" 0
   IfFileExists "$INSTDIR\rdp-link.exe" 0 launcher_shortcut_done
-    CreateShortCut "$SMPROGRAMS\${APPNAME}\Office RDP Launcher.lnk" \
-      "$INSTDIR\rdp-link.exe" "" "$INSTDIR\rdp-link.exe" 0
+    CreateShortCut "$SMPROGRAMS\${APPNAME}\Browser control panel.lnk" \
+      "$INSTDIR\office-rdp.exe" "--ui" "$INSTDIR\office-rdp.exe" 0
   launcher_shortcut_done:
   CreateShortCut "$SMPROGRAMS\${APPNAME}\Uninstall.lnk" "$INSTDIR\uninstall.exe"
-
-  ; Desktop shortcut for the control panel.
-  CreateShortCut "$DESKTOP\Office RDP.lnk" \
-    "$INSTDIR\office-rdp.exe" "--ui" "$INSTDIR\office-rdp.exe" 0
 
   ; Add/Remove Programs entry.
   WriteRegStr HKLM "Software\OfficeRDP" "InstallDir" "$INSTDIR"
@@ -103,6 +110,7 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\${APPNAME}\Office RDP.lnk"
   Delete "$SMPROGRAMS\${APPNAME}\Share this screen.lnk"
   Delete "$SMPROGRAMS\${APPNAME}\Rendezvous server.lnk"
+  Delete "$SMPROGRAMS\${APPNAME}\Browser control panel.lnk"
   Delete "$SMPROGRAMS\${APPNAME}\Office RDP Launcher.lnk"
   Delete "$SMPROGRAMS\${APPNAME}\Uninstall.lnk"
   RMDir "$SMPROGRAMS\${APPNAME}"

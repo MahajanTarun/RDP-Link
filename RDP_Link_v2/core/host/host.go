@@ -34,9 +34,13 @@ type Agent struct {
 	Alias    string
 	Password string
 	ReadOnly bool
-	LANIP    string
-	WANIP    string
-	Port     int
+	// TestPattern streams a synthetic frame instead of capturing the screen.
+	// It exists so the host stack can be validated in environments where GDI
+	// or X11 capture is unavailable (CI, Wine, headless runners).
+	TestPattern bool
+	LANIP       string
+	WANIP       string
+	Port        int
 
 	mu        sync.Mutex
 	raw       *image.RGBA
@@ -371,18 +375,34 @@ func (a *Agent) Serve() error {
 		w.WriteHeader(http.StatusNoContent)
 		go a.Stop()
 	})
-	addr := fmt.Sprintf(":%d", a.Port)
+	addr4 := fmt.Sprintf("0.0.0.0:%d", a.Port)
+	ln4, err := net.Listen("tcp4", addr4)
+	if err != nil {
+		return err
+	}
+	listeners := []net.Listener{ln4}
+	// Listen on IPv6 separately. A single ":port" listener asks for a
+	// dual-stack socket, and macOS 26 completes the TCP handshake for LAN
+	// IPv4 clients on that socket without ever delivering them to accept().
+	// Two explicit sockets (tcp4 + tcp6 with IPV6_V6ONLY) work everywhere.
+	if ln6, err := net.Listen("tcp6", fmt.Sprintf("[::]:%d", a.Port)); err == nil {
+		listeners = append(listeners, ln6)
+	}
 	server := &http.Server{
-		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 	// #nosec G102 -- the host is intentionally reachable on the local network.
-	errCh := make(chan error, 1)
-	go func() { errCh <- server.ListenAndServe() }()
+	errCh := make(chan error, len(listeners))
+	for _, ln := range listeners {
+		go func(l net.Listener) { errCh <- server.Serve(l) }(ln)
+	}
 	select {
 	case err := <-errCh:
+		if err == http.ErrServerClosed {
+			return nil
+		}
 		return err
 	case <-a.done:
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

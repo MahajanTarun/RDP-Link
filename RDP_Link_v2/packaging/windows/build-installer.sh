@@ -49,25 +49,33 @@ cat > "$DIST/README.txt" <<'EOF'
 Office RDP for Windows
 ======================
 
-Start the control panel (opens in your browser):
+Start the desktop app (share this screen and control other devices):
 
-    office-rdp.exe --ui
+    rdp-link.exe
 
 Share this screen from a terminal:
 
     office-rdp.exe --host --port 8088 --password <secret>
+
+Open the browser control panel instead:
+
+    office-rdp.exe --ui
 
 Check that capture and input work:
 
     office-rdp.exe --doctor
     office-rdp.exe --displays
 
+Stream a synthetic test pattern (CI / no capturable desktop):
+
+    office-rdp.exe --host --test-pattern --port 8088 --password <secret>
+
 Run a rendezvous server for WAN connections:
 
     office-rdp-rendezvous.exe --listen :8080
 
-Guests can connect with the desktop launcher (rdp-link.exe), the Android app,
-or any browser pointed at http://<this-pc>:8088/.
+Guests can connect with the desktop launcher (rdp-link.exe), the macOS/Linux
+app, the Android app, or any browser pointed at http://<this-pc>:8088/.
 
 The host agent needs an interactive desktop session. Windows Firewall rules
 for office-rdp.exe are added by the installer for private networks.

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+source "$ROOT/packaging/env.sh"
 cd "$ROOT"
 
 # Pick a Python that actually has the test dependencies. Several interpreters
