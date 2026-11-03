@@ -332,14 +332,18 @@ The native arm64 package is fully validated and the code path is identical.
 
 | Artifact | Size | Notes |
 | --- | --- | --- |
-| `dist/macos/RDPLink-macos.dmg` | 55 MB | `.app` with arm64 + amd64 Go tools, Ant Design UI, ad-hoc signed (`codesign --verify --strict` passes) |
-| `dist/windows/RDPLink-setup.exe` | 23 MB | NSIS; ships `rdp-link.exe`, CGO `office-rdp.exe`, rendezvous, shortcuts, Add/Remove Programs, firewall rule |
+| `dist/macos/RDPLink-macos.dmg` | 50 MB | `.app` with arm64 + amd64 Go tools, Ant Design UI, ad-hoc signed (`codesign --verify --strict` passes) |
+| `dist/macos/RDPLink-installer.pkg` | 46 MB | double-click installer; postinstall adds the agent to the Application Firewall and installs the login service |
+| `dist/windows/RDPLink-setup.exe` | 22 MB | NSIS; ships `rdp-link.exe`, CGO `office-rdp.exe`, rendezvous, shortcuts, Add/Remove Programs, firewall rule |
 | `dist/windows/rdp-link.exe` | 17 MB | PyInstaller onefile launcher + bundled viewer (no Python on target) |
-| `dist/linux/rdplink-linux-arm64.deb` | 24 MB | `office-rdp`, `office-rdp-rendezvous`, `rdp-link`, docs |
-| `dist/linux/rdplink-linux-amd64.deb` | 26 MB | same payload for x86-64 |
-| `dist/linux/rdplink-linux.tar.gz` | 80 MB | both architectures plus the launcher |
-| `dist/android/RDPLink-android-release.apk` | 21 MB | release-signed, `versionCode 2`, Ant Design UI |
-| `dist/android/RDPLink-android-release.aab` | 8.4 MB | Play upload bundle |
+| `dist/linux/rdplink-linux-arm64.deb` | 22 MB | `office-rdp`, `office-rdp-rendezvous`, `rdp-link`, docs; postinst loads the modules and the uinput rule |
+| `dist/linux/rdplink-linux-amd64.deb` | 23 MB | same payload for x86-64 |
+| `dist/linux/rdplink-linux.tar.gz` | 74 MB | both architectures plus the launcher |
+| `dist/android/RDPLink-android-release.apk` | 33 MB | release-signed, `versionCode 2`, Ant Design UI, guest viewer bundled |
+| `dist/android/RDPLink-android-release.aab` | 13 MB | Play upload bundle |
+
+The Android package grew because the Go core (identity, signed rendezvous
+requests) is now linked into the app as a native library for all four ABIs.
 
 ## Platform notes and not verified here
 
