@@ -75,6 +75,15 @@ APPLE_ID=... APPLE_APP_SPECIFIC_PASSWORD=... APPLE_TEAM_ID=... \
   bash packaging/build-macos.sh
 ```
 
+The DMG is drag-to-Applications. A double-click `.pkg` is also produced with a
+postinstall that allows the agent through the Application Firewall and installs
+the login service:
+
+```sh
+bash packaging/build-macos.sh
+bash packaging/build-macos-pkg.sh   # dist/macos/RDPLink-installer.pkg
+```
+
 ## Windows
 
 The installer cross-builds with MinGW when it is installed:
