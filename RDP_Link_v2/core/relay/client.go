@@ -50,13 +50,16 @@ type request struct {
 	Query   string            `json:"query"`
 	Headers map[string]string `json:"headers"`
 	Body    string            `json:"body"`
+	Stream  bool              `json:"stream,omitempty"`
 }
 
 type reply struct {
+	Type    string            `json:"type,omitempty"`
 	ID      string            `json:"id"`
 	Status  int               `json:"status"`
 	Headers map[string]string `json:"headers"`
 	Body    string            `json:"body"`
+	Data    string            `json:"data,omitempty"`
 	Error   string            `json:"error,omitempty"`
 }
 
@@ -161,13 +164,61 @@ func (c *Client) connectOnce() error {
 		sem <- struct{}{}
 		go func(req request) {
 			defer func() { <-sem }()
-			rep := c.execute(req)
-			out, _ := json.Marshal(rep)
-			writeMu.Lock()
-			_ = conn.WriteMessage(websocket.TextMessage, out)
-			writeMu.Unlock()
+			send := func(rep reply) {
+				out, _ := json.Marshal(rep)
+				writeMu.Lock()
+				_ = conn.WriteMessage(websocket.TextMessage, out)
+				writeMu.Unlock()
+			}
+			if req.Stream {
+				c.stream(req, send)
+				return
+			}
+			send(c.execute(req))
 		}(req)
 	}
+}
+
+// stream forwards an incremental response (audio/MJPEG) as frames.
+func (c *Client) stream(req request, send func(reply)) {
+	target := fmt.Sprintf("http://127.0.0.1:%d%s", c.LocalPort, req.Path)
+	if req.Query != "" {
+		target += "?" + req.Query
+	}
+	httpReq, err := http.NewRequest(req.Method, target, nil)
+	if err != nil {
+		send(reply{Type: "end", ID: req.ID, Error: err.Error()})
+		return
+	}
+	for k, v := range req.Headers {
+		httpReq.Header.Set(k, v)
+	}
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		send(reply{Type: "end", ID: req.ID, Error: err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	headers := map[string]string{}
+	for _, k := range []string{"Content-Type", "ETag", "Cache-Control", "Content-Disposition"} {
+		if v := resp.Header.Get(k); v != "" {
+			headers[k] = v
+		}
+	}
+	send(reply{Type: "stream", ID: req.ID, Status: resp.StatusCode, Headers: headers})
+	buf := make([]byte, 16<<10)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			send(reply{Type: "chunk", ID: req.ID,
+				Data: base64.StdEncoding.EncodeToString(buf[:n])})
+		}
+		if err != nil {
+			break
+		}
+	}
+	send(reply{Type: "end", ID: req.ID})
 }
 
 func (c *Client) execute(req request) reply {

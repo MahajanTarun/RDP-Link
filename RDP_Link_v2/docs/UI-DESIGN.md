@@ -105,6 +105,13 @@ horizontal padding. Semantic colour maps to state:
 - **Connecting / reconnecting** → warning palette
 - **Disconnected / error** → error palette
 
+### Devices drawer
+
+A header **Devices** button opens a 360 px Ant Design drawer with sections for
+speaker, microphone, camera, serial and allow-listed ports. Section visibility
+comes from `/capabilities`; unavailable features are hidden rather than shown
+disabled. The drawer uses the same tokens as the rest of the viewer.
+
 ### Scale selector
 
 Both viewers expose **Fit**, **Fill**, **1:1**, 50 %, 75 %, 125 % and 150 %.

@@ -130,6 +130,31 @@
   .card .actions button { flex: 1; height: 40px; }
   .err { color: var(--error-text); font-size: 13px; min-height: 20px; margin-top: 8px; }
 
+  /* Device drawer */
+  #devices {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(92vw, 360px);
+    background: var(--bg-container); border-left: 1px solid var(--border-secondary);
+    box-shadow: -6px 0 16px rgba(0, 0, 0, 0.08); z-index: 30; padding: 16px;
+    overflow-y: auto; display: none;
+  }
+  #devices.open { display: block; }
+  #devices h2 { font-size: 16px; margin: 0 0 4px; }
+  #devices .close { position: absolute; top: 10px; right: 10px; }
+  #devices section { border-top: 1px solid var(--border-secondary); padding: 14px 0; }
+  #devices section:first-of-type { border-top: 0; }
+  #devices h3 { font-size: 14px; margin: 0 0 8px; }
+  #devices p { font-size: 12px; color: var(--text-secondary); margin: 0 0 8px; }
+  #devices .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  #devices .muted { color: var(--text-tertiary); font-size: 12px; }
+  #serialOut {
+    width: 100%; height: 110px; resize: vertical; font-family: ui-monospace, monospace;
+    font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 6px; background: #fafafa; color: var(--text);
+  }
+  #serialIn { flex: 1; }
+  #cameraImg { width: 100%; border-radius: var(--radius); border: 1px solid var(--border-secondary); }
+  #cameraImg[hidden] { display: none; }
+
   #toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
     background: var(--bg-container); color: var(--text); border: 1px solid var(--border-secondary);
@@ -181,6 +206,7 @@
       <option value="1.25">125%</option>
       <option value="1.5">150%</option>
     </select>
+    <button id="btnDevices" title="Audio, camera, serial and ports">Devices</button>
     <button id="btnClip" title="Sync clipboard with host">Clipboard</button>
     <button id="btnFull" title="Fullscreen">Fullscreen</button>
     <button id="btnDisc" disabled>Disconnect</button>
@@ -204,6 +230,59 @@
       </div>
     </div>
   </div>
+
+  <aside id="devices" aria-label="Devices">
+    <button class="close" id="devClose" title="Close">✕</button>
+    <h2>Devices</h2>
+    <p id="devHint">Enable features on the host with --audio-input, --camera-device, --serial and --forward.</p>
+
+    <section id="secAudio" hidden>
+      <h3>Speaker (host audio)</h3>
+      <div class="row">
+        <button id="audioPlay">Play</button>
+        <button id="audioStop">Stop</button>
+      </div>
+      <p class="muted" id="audioState">Stopped</p>
+    </section>
+
+    <section id="secMic" hidden>
+      <h3>Microphone (this device → host)</h3>
+      <div class="row">
+        <button id="micStart">Start</button>
+        <button id="micStop">Stop</button>
+      </div>
+      <p class="muted" id="micState">Stopped. Requires HTTPS or localhost.</p>
+    </section>
+
+    <section id="secCamera" hidden>
+      <h3>Camera (host)</h3>
+      <img id="cameraImg" alt="Host camera" hidden />
+      <div class="row">
+        <button id="cameraStart">Start</button>
+        <button id="cameraStop">Stop</button>
+      </div>
+      <p class="muted" id="cameraState">Stopped</p>
+    </section>
+
+    <section id="secSerial" hidden>
+      <h3>Serial</h3>
+      <div class="row">
+        <button id="serialConnect">Connect</button>
+        <button id="serialDisconnect">Disconnect</button>
+      </div>
+      <p class="muted" id="serialState">Disconnected</p>
+      <textarea id="serialOut" readonly placeholder="serial output"></textarea>
+      <div class="row" style="margin-top:8px">
+        <input id="serialIn" placeholder="type and press Enter" />
+      </div>
+    </section>
+
+    <section id="secPorts" hidden>
+      <h3>Ports</h3>
+      <div class="row" id="portLinks"></div>
+      <p class="muted">Only ports allow-listed with --forward are reachable.</p>
+    </section>
+  </aside>
 
   <div id="keys">
     <button data-key="escape">Esc</button>
@@ -557,6 +636,128 @@
     pwInput.value = '';
     pwInput.focus();
     toast('Saved password cleared');
+  });
+
+  // -- devices ------------------------------------------------------------
+  const basePath = location.pathname.endsWith('/')
+    ? location.pathname : location.pathname + '/';
+  const wsBase = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
+    location.host + basePath;
+  const withPw = (path) => path + (password ? '?password=' + encodeURIComponent(password) : '');
+
+  let audioEl = null, micWS = null, micRecorder = null, serialWS = null;
+
+  async function loadCaps() {
+    try {
+      const res = await fetch(withPw('capabilities'), { headers: authHeaders(), cache: 'no-store' });
+      if (!res.ok) throw new Error('capabilities ' + res.status);
+      const caps = await res.json();
+      $('secAudio').hidden = !caps.audio;
+      $('secMic').hidden = !caps.mic;
+      $('secCamera').hidden = !caps.camera;
+      $('secSerial').hidden = !caps.serial;
+      $('secPorts').hidden = !(caps.ports && caps.ports.length);
+      const links = $('portLinks');
+      links.innerHTML = '';
+      (caps.ports || []).forEach((port) => {
+        const a = document.createElement('a');
+        a.href = withPw('port/' + port + '/');
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'Port ' + port;
+        links.appendChild(a);
+      });
+      if (caps.serial) $('serialState').textContent = 'Target: ' + caps.serial;
+    } catch (e) {
+      $('devHint').textContent = 'Device bridge unavailable: ' + e.message;
+    }
+  }
+
+  $('btnDevices').addEventListener('click', () => {
+    const panel = $('devices');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) loadCaps();
+  });
+  $('devClose').addEventListener('click', () => $('devices').classList.remove('open'));
+
+  $('audioPlay').addEventListener('click', () => {
+    if (!audioEl) audioEl = new Audio();
+    audioEl.src = withPw('audio');
+    audioEl.play().then(() => { $('audioState').textContent = 'Playing'; })
+      .catch((e) => { $('audioState').textContent = 'Cannot play: ' + e.message; });
+  });
+  $('audioStop').addEventListener('click', () => {
+    if (audioEl) { audioEl.pause(); audioEl.src = ''; }
+    $('audioState').textContent = 'Stopped';
+  });
+
+  $('micStart').addEventListener('click', async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      $('micState').textContent = 'Microphone needs HTTPS or localhost';
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micWS = new WebSocket(wsBase + withPw('mic'));
+      micWS.binaryType = 'arraybuffer';
+      micWS.onopen = () => {
+        micRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+        micRecorder.ondataavailable = (ev) => {
+          if (ev.data.size && micWS?.readyState === WebSocket.OPEN) micWS.send(ev.data);
+        };
+        micRecorder.start(250);
+        $('micState').textContent = 'Streaming microphone';
+      };
+      micWS.onerror = () => { $('micState').textContent = 'Microphone bridge failed'; };
+    } catch (e) {
+      $('micState').textContent = 'Microphone unavailable: ' + e.message;
+    }
+  });
+  function stopMic() {
+    try { micRecorder?.stop(); } catch (_) {}
+    micRecorder = null;
+    try { micWS?.close(); } catch (_) {}
+    micWS = null;
+    $('micState').textContent = 'Stopped';
+  }
+  $('micStop').addEventListener('click', stopMic);
+
+  $('cameraStart').addEventListener('click', () => {
+    const img = $('cameraImg');
+    img.hidden = false;
+    img.src = withPw('camera.mjpg') + '&t=' + Date.now();
+    $('cameraState').textContent = 'Streaming host camera';
+  });
+  $('cameraStop').addEventListener('click', () => {
+    const img = $('cameraImg');
+    img.src = '';
+    img.hidden = true;
+    $('cameraState').textContent = 'Stopped';
+  });
+
+  $('serialConnect').addEventListener('click', () => {
+    serialWS = new WebSocket(wsBase + withPw('serial'));
+    serialWS.binaryType = 'arraybuffer';
+    serialWS.onopen = () => { $('serialState').textContent = 'Connected'; };
+    serialWS.onmessage = (ev) => {
+      const text = new TextDecoder().decode(ev.data);
+      const out = $('serialOut');
+      out.value += text;
+      out.scrollTop = out.scrollHeight;
+    };
+    serialWS.onclose = () => { $('serialState').textContent = 'Disconnected'; };
+  });
+  $('serialDisconnect').addEventListener('click', () => {
+    serialWS?.close();
+    serialWS = null;
+  });
+  $('serialIn').addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter') return;
+    ev.preventDefault();
+    if (serialWS?.readyState === WebSocket.OPEN) {
+      serialWS.send(new TextEncoder().encode(ev.target.value + '\n'));
+      ev.target.value = '';
+    }
   });
 
   pwInput.value = password;

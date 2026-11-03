@@ -218,6 +218,42 @@ curl -s -F "file=@/tmp/parity.txt;filename=parity.txt" \
 curl -s -o out.txt "http://127.0.0.1:18088/download?password=$PW&name=parity.txt"
 ```
 
+### 4.7 Device bridge
+
+```sh
+# Host with devices enabled
+office-rdp --host --port 8088 --password PW \
+  --audio-input "lavfi:sine=frequency=440" \
+  --camera-device testsrc \
+  --serial tcp:127.0.0.1:9101 \
+  --forward 9099
+
+# Capabilities (always authenticated)
+curl -s "http://HOST:8088/capabilities?password=PW"
+
+# Speaker (2 s, valid Opus/WebM)
+curl -s -m 2 -o a.webm "http://HOST:8088/audio?password=PW"
+ffmpeg -i a.webm            # Audio: opus, 48000 Hz, mono
+
+# Camera (testsrc avoids camera permissions)
+curl -s -m 2 -o c.mjpeg "http://HOST:8088/camera.mjpg?password=PW"
+# MJPEG 640x480 frames
+
+# Port allow-list
+curl -s "http://HOST:8088/port/9099/?password=PW"
+
+# Serial WebSocket (direct)
+go run ./scripts/wsprobe -url "ws://HOST:8088/serial?password=PW" -send $'ping\n'
+
+# Microphone (direct): send a WebM/Opus chunk
+ffmpeg -f lavfi -i "sine=frequency=660" -t 1 -c:a libopus -f webm mic.webm
+go run ./scripts/wsprobe -url "ws://HOST:8088/mic?password=PW" -file mic.webm -no-wait
+```
+
+Evaluation: `/capabilities` lists only configured devices; audio decodes as
+Opus; MJPEG frames are valid JPEG; the serial echo matches; `/port/<p>/` only
+works for allow-listed ports.
+
 ### 4.6 Evaluation criteria
 
 | Area | Pass condition |
@@ -232,6 +268,8 @@ curl -s -o out.txt "http://127.0.0.1:18088/download?password=$PW&name=parity.txt
 | Host display picker | `/displays` lists monitors and `POST /display` switches them |
 | WAN relay | `/resolve` returns a relay URL; `/t/<id>/*` streams and accepts input |
 | Android parity | Clipboard GET/POST and file upload/list/download round-trip |
+| Device bridge | Audio/Opus, MJPEG camera, serial echo and allow-listed port proxy verified |
+| Device limits | Mic/serial are LAN-only over the relay; USB is storage-level |
 | Security | No unauthenticated frame/input access; `/quit` requires the password; scans are clean |
 
 ---

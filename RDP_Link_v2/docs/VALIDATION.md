@@ -72,6 +72,33 @@ The Android app resolved `033976933` through the relay and streamed
 `1280×800 · 11 fps`; the desktop/browser viewer does the same. See
 [`WAN.md`](WAN.md).
 
+### Device bridge
+
+Optional host devices are exposed through `/capabilities` and authenticated
+endpoints (see [`DEVICES.md`](DEVICES.md)):
+
+```
+GET /capabilities        {"audio":true,"mic":true,"camera":true,
+                          "serial":"tcp:127.0.0.1:9101","ports":[9099]}
+GET /audio (2 s)         200, 18,785 bytes, Opus 48 kHz mono
+GET /audio via relay     200, 18,785 bytes
+GET /camera.mjpg         200, MJPEG 640×480 (testsrc; real device needs
+                         camera permission, otherwise 503)
+GET /port/9099/          200 direct and via relay (allow-listed)
+WS /serial               echo round-trip (direct; TCP and PTY paths)
+WS /mic                  10 KB WebM consumed by the host player
+```
+
+Guest UI: the browser/Android **Devices** drawer (audio, microphone, camera,
+serial console, port links) and the Tk viewer's **Audio** and **Devices**
+buttons. Verified in the drawer: camera rendered 640×480, serial echoed
+`drawer-serial`, speaker state reached `Playing`.
+
+Limitations are explicit: the relay carries audio/camera streams and port
+proxies, but WebSocket endpoints (microphone, serial) are LAN-only; camera is a
+preview, not a virtual device; USB is storage-level file sharing, because
+generic USB passthrough needs kernel drivers.
+
 All four surfaces use the Ant Design 5 light theme (Tailwind-style spacing,
 white cards on `#F5F5F5`, `#1677FF` primary, 6/8 px radii, Ant Design tags) and
 the RDP Link monitor mark (the supplied logo, cropped for small sizes):

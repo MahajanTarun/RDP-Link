@@ -19,3 +19,4 @@
 .gradle/
 packaging/windows/optional-launcher.nsh
 *.keystore
+/wsprobe

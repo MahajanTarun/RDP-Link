@@ -41,9 +41,14 @@ type Agent struct {
 	// Display is the monitor index being captured. It can be changed while
 	// the agent is running through POST /display.
 	Display int
-	LANIP   string
-	WANIP   string
-	Port    int
+	// Device bridge configuration (all optional).
+	AudioInput   string
+	CameraDevice string
+	SerialPath   string
+	Forwards     map[int]bool
+	LANIP        string
+	WANIP        string
+	Port         int
 
 	mu        sync.Mutex
 	raw       *image.RGBA
@@ -93,7 +98,7 @@ const (
 func New(peerID, alias, password string, port int) *Agent {
 	a := &Agent{PeerID: peerID, Alias: alias, Password: password, Port: port,
 		peers: map[string]*transport.Peer{}, fails: map[string]*failEntry{},
-		done: make(chan struct{})}
+		Forwards: map[int]bool{}, done: make(chan struct{})}
 	a.LANIP = lanIP()
 	a.WANIP = wanIP()
 	return a
@@ -159,6 +164,31 @@ func (a *Agent) FrameJPEG() ([]byte, string, uint64) {
 	return nil, "image/jpeg", a.frameHash
 }
 
+// auth enforces the access password, with the same throttling used by every
+// endpoint (including the device bridge).
+func (a *Agent) auth(w http.ResponseWriter, r *http.Request) bool {
+	ip := clientIP(r)
+	if a.throttled(ip) {
+		http.Error(w, "too many attempts", http.StatusTooManyRequests)
+		return false
+	}
+	if a.Password == "" {
+		http.Error(w, "host password not configured", http.StatusForbidden)
+		return false
+	}
+	supplied := r.URL.Query().Get("password")
+	if supplied == "" {
+		supplied = r.Header.Get("X-Office-Password")
+	}
+	if subtle.ConstantTimeCompare([]byte(supplied), []byte(a.Password)) == 1 {
+		a.clearFailures(ip)
+		return true
+	}
+	a.noteFailure(ip)
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	return false
+}
+
 func (a *Agent) Serve() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/info", func(w http.ResponseWriter, r *http.Request) {
@@ -171,28 +201,7 @@ func (a *Agent) Serve() error {
 			"port":   a.Port,
 		})
 	})
-	auth := func(w http.ResponseWriter, r *http.Request) bool {
-		ip := clientIP(r)
-		if a.throttled(ip) {
-			http.Error(w, "too many attempts", http.StatusTooManyRequests)
-			return false
-		}
-		if a.Password == "" {
-			http.Error(w, "host password not configured", http.StatusForbidden)
-			return false
-		}
-		supplied := r.URL.Query().Get("password")
-		if supplied == "" {
-			supplied = r.Header.Get("X-Office-Password")
-		}
-		if subtle.ConstantTimeCompare([]byte(supplied), []byte(a.Password)) == 1 {
-			a.clearFailures(ip)
-			return true
-		}
-		a.noteFailure(ip)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return false
-	}
+	auth := a.auth
 	mux.HandleFunc("/displays", func(w http.ResponseWriter, r *http.Request) {
 		type display struct {
 			Index   int  `json:"index"`
@@ -410,6 +419,13 @@ func (a *Agent) Serve() error {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"recording": rec, "path": path})
 	})
+
+	mux.HandleFunc("/capabilities", a.handleCapabilities)
+	mux.HandleFunc("/audio", a.handleAudio)
+	mux.HandleFunc("/mic", a.handleMicWS)
+	mux.HandleFunc("/camera.mjpg", a.handleCamera)
+	mux.HandleFunc("/serial", a.handleSerialWS)
+	mux.HandleFunc("/port/", a.handlePortProxy)
 
 	mux.HandleFunc("/logo.png", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -760,7 +776,16 @@ func (a *Agent) RecordingStatus() (bool, string) {
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	// Relayed requests all arrive from 127.0.0.1; use the real client address
+	// so per-IP throttling stays meaningful.
+	if host == "127.0.0.1" || host == "::1" {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if first := strings.Split(xff, ",")[0]; strings.TrimSpace(first) != "" {
+				return strings.TrimSpace(first)
+			}
+		}
 	}
 	return host
 }

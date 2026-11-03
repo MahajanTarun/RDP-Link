@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,13 +30,18 @@ type tunnelRequest struct {
 	Query   string            `json:"query"`
 	Headers map[string]string `json:"headers"`
 	Body    string            `json:"body"`
+	// Stream asks the host to forward the response incrementally (audio,
+	// MJPEG camera, long downloads).
+	Stream bool `json:"stream,omitempty"`
 }
 
 type tunnelReply struct {
+	Type    string            `json:"type,omitempty"` // "", "stream", "chunk", "end"
 	ID      string            `json:"id"`
 	Status  int               `json:"status"`
 	Headers map[string]string `json:"headers"`
 	Body    string            `json:"body"`
+	Data    string            `json:"data,omitempty"`
 	Error   string            `json:"error,omitempty"`
 }
 
@@ -73,7 +79,10 @@ func (t *tunnel) readLoop(s *Server) {
 		}
 		t.mu.Lock()
 		ch := t.pending[reply.ID]
-		delete(t.pending, reply.ID)
+		// Streamed replies keep the channel until the host sends "end".
+		if reply.Type == "" || reply.Type == "end" {
+			delete(t.pending, reply.ID)
+		}
 		t.mu.Unlock()
 		if ch != nil {
 			ch <- reply
@@ -144,6 +153,7 @@ var requestHeaders = map[string]bool{
 	"if-none-match":       true,
 	"accept":              true,
 	"content-disposition": true,
+	"x-forwarded-for":     true,
 }
 
 var responseHeaders = map[string]bool{
@@ -151,6 +161,7 @@ var responseHeaders = map[string]bool{
 	"etag":                true,
 	"cache-control":       true,
 	"content-disposition": true,
+	"x-forwarded-for":     true,
 }
 
 // handleProxy forwards /t/<peerId>/<path> to the host over its tunnel.
@@ -192,6 +203,8 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	streaming := tail == "/audio" || tail == "/camera.mjpg"
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxRelayBody))
 	if err != nil {
 		http.Error(w, "read body", http.StatusBadRequest)
@@ -199,24 +212,36 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddUint64(&tunnelSeq, 1))
-	ch := make(chan tunnelReply, 1)
+	ch := make(chan tunnelReply, 32)
 	t.mu.Lock()
 	t.pending[id] = ch
 	t.mu.Unlock()
 
+	headers := copyHeaders(r.Header, requestHeaders)
+	clientHost, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if clientHost == "" {
+		clientHost = r.RemoteAddr
+	}
+	headers["X-Forwarded-For"] = clientHost
 	req := tunnelRequest{
 		ID:      id,
 		Method:  r.Method,
 		Path:    tail,
 		Query:   r.URL.RawQuery,
-		Headers: copyHeaders(r.Header, requestHeaders),
+		Headers: headers,
 		Body:    base64.StdEncoding.EncodeToString(body),
+		Stream:  streaming,
 	}
 	if err := t.send(req); err != nil {
 		t.mu.Lock()
 		delete(t.pending, id)
 		t.mu.Unlock()
 		http.Error(w, "relay send failed", http.StatusBadGateway)
+		return
+	}
+
+	if streaming {
+		s.proxyStream(w, r, ch)
 		return
 	}
 
@@ -241,6 +266,52 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "relay timeout", http.StatusGatewayTimeout)
 	case <-t.closed:
 		http.Error(w, "host disconnected", http.StatusBadGateway)
+	}
+}
+
+// proxyStream relays an incremental response (audio/MJPEG) to the guest.
+func (s *Server) proxyStream(w http.ResponseWriter, r *http.Request, ch chan tunnelReply) {
+	flusher, _ := w.(http.Flusher)
+	started := false
+	for {
+		select {
+		case frame := <-ch:
+			switch frame.Type {
+			case "stream":
+				for k, v := range frame.Headers {
+					if responseHeaders[strings.ToLower(k)] {
+						w.Header().Set(k, v)
+					}
+				}
+				w.WriteHeader(frame.Status)
+				started = true
+				if flusher != nil {
+					flusher.Flush()
+				}
+			case "chunk":
+				data, _ := base64.StdEncoding.DecodeString(frame.Data)
+				if _, err := w.Write(data); err != nil {
+					return
+				}
+				if flusher != nil {
+					flusher.Flush()
+				}
+			case "end":
+				return
+			default:
+				if frame.Error != "" && !started {
+					http.Error(w, frame.Error, http.StatusBadGateway)
+					return
+				}
+			}
+		case <-r.Context().Done():
+			return
+		case <-time.After(2 * time.Minute):
+			if !started {
+				http.Error(w, "stream timeout", http.StatusGatewayTimeout)
+			}
+			return
+		}
 	}
 }
 

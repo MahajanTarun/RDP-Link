@@ -10,12 +10,15 @@ import json
 import os
 import sys
 import tempfile
+import shutil
+import subprocess
 import threading
 import time
 import tkinter as tk
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from rdp_manager.logo import LOGO_PNG
@@ -130,6 +133,8 @@ class Viewer:
 
         # Right-hand actions first so they keep a stable position.
         Chip(toolbar, "Disconnect", self._close).pack(side="right", padx=(0, 14))
+        Chip(toolbar, "Devices", self._open_devices).pack(side="right", padx=(0, 8))
+        Chip(toolbar, "Audio", self._toggle_audio).pack(side="right", padx=(0, 8))
         self.zoom_var = tk.StringVar(value=self._settings.get("mode", "Fit"))
         zoom = ttk.Combobox(toolbar, textvariable=self.zoom_var, width=7,
                             state="readonly",
@@ -212,6 +217,33 @@ class Viewer:
         self.root.after(800, self._load_displays)
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._clip_loop, daemon=True).start()
+
+    # -- devices -------------------------------------------------------------
+    def _open_devices(self):
+        """Open the control panel, which hosts audio/camera/serial/ports."""
+        url = self.host_url + "/ui"
+        if self.password:
+            url += "#pw=" + urllib.parse.quote(self.password)
+        webbrowser.open(url)
+        self._set_status("Opened device panel in the browser", "connecting")
+
+    def _toggle_audio(self):
+        if getattr(self, "_audio_proc", None) is not None:
+            self._audio_proc.terminate()
+            self._audio_proc = None
+            self._set_status("Host audio stopped", "connecting")
+            return
+        player = shutil.which("ffplay")
+        if not player:
+            self._set_status("ffplay is not installed on this device", "error")
+            return
+        try:
+            self._audio_proc = subprocess.Popen(
+                [player, "-nodisp", "-autoexit", "-loglevel", "quiet",
+                 self._auth_url("/audio")])
+            self._set_status("Playing host audio", "live")
+        except Exception as exc:
+            self._set_status(f"Audio failed: {exc}", "error")
 
     # -- rendering -----------------------------------------------------------
     def _zoom_scale(self, canvas_w, canvas_h, image_w, image_h):
@@ -575,6 +607,10 @@ class Viewer:
 
     def _close(self):
         self._stop = True
+        proc = getattr(self, "_audio_proc", None)
+        if proc is not None:
+            proc.terminate()
+            self._audio_proc = None
         try:
             self._settings["geometry"] = self.root.geometry()
             self._settings["mode"] = self.zoom_var.get()

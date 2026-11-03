@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,10 @@ func main() {
 	ui := flag.Bool("ui", false, "open the control panel in a browser")
 	relayInsecure := flag.Bool("relay-insecure", false, "skip TLS verification for the relay (testing only)")
 	relayCA := flag.String("relay-ca", "", "custom CA bundle for the relay's TLS certificate")
+	audioInput := flag.String("audio-input", "", "ffmpeg audio input as format:input (e.g. avfoundation::0)")
+	cameraDevice := flag.String("camera-device", "", "camera device for MJPEG (default 0 / /dev/video0)")
+	serialPath := flag.String("serial", "", "serial device (or tcp:host:port) to expose to guests")
+	forwardList := flag.String("forward", "", "comma-separated host TCP ports guests may reach")
 	testPattern := flag.Bool("test-pattern", false, "stream a synthetic test pattern instead of the screen")
 	flag.Parse()
 
@@ -106,6 +111,14 @@ func main() {
 		ag := host.New(id.Formatted(), id.Alias, pw, *port)
 		ag.ReadOnly = *readOnly
 		ag.TestPattern = *testPattern
+		ag.AudioInput = *audioInput
+		ag.CameraDevice = *cameraDevice
+		ag.SerialPath = *serialPath
+		for _, item := range strings.Split(*forwardList, ",") {
+			if n, err := strconv.Atoi(strings.TrimSpace(item)); err == nil && n > 0 && n < 65536 {
+				ag.Forwards[n] = true
+			}
+		}
 		if err := ag.StartCapture(*display); err != nil {
 			fmt.Fprintln(os.Stderr, "capture:", err)
 		}

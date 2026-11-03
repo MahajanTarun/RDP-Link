@@ -314,7 +314,7 @@ func RunOptions(addr, certFile, keyFile, publicURL string) error {
 		Handler:           s,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
+		WriteTimeout:      0, // streamed audio/MJPEG responses are long-lived
 		IdleTimeout:       120 * time.Second,
 	}
 	// #nosec G102 -- the rendezvous server is intentionally reachable on its listen address.
