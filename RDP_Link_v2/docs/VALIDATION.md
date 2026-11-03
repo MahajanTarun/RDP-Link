@@ -15,10 +15,10 @@ this validation pass, on physical hardware.
 
 | Platform | Host (share this screen) | Guest (control another device) |
 | --- | --- | --- |
-| **macOS 27.2 (arm64)** | **Working — live.** 1512×982 JPEG stream; `/info`, `/frame.jpg`, ETag `304`, `/input`, `/ui`, `/quit` verified. Served a live session to the Linux PC and to the Android phone. | **Working — live.** Desktop viewer rendered the live Linux desktop (1366×768) and the Android screen (1080×2340 · 35 fps). Browser guest works too. |
+| **macOS 27.2 (arm64)** | **Working — live.** 1512×982 JPEG stream; `/info`, `/frame.jpg`, ETag `304`, `/input`, `/ui`, `/quit` verified (all behind the session/header credential). Served a live session to the Linux PC and to the Android phone. | **Working — live.** Desktop viewer rendered the live Linux desktop (1366×768) and the Android screen (1080×2340 · 35 fps). Browser guest works too (`1280×800 · 22 fps` with the session cookie). |
 | **Linux (Ubuntu 24.04, X11)** | **Working — live.** Real X session at 1366×768 (not Xvfb): `/info`, JPEG `/frame.jpg` (92,546 bytes), ETag `304`, `/input` 204, `/ui` 200, `/quit` 204. arm64 `.deb` also fully validated. | **Working — live.** `rdp-link` viewer on the Linux PC displayed the macOS host at 1512×982 · 6 fps. |
 | **Windows (installer + app)** | **Working under Wine — test pattern.** Real GDI capture needs Windows hardware; under Wine `office-rdp.exe --host --test-pattern` served `/info`, a 1280×800 JPEG, changing ETags, `/input` 204 and `/ui` 200. | **Working — live under Wine.** `rdp-link.exe` (PyInstaller, no Python needed) renders the Ant Design launcher; `--viewer --probe` returned a 1512×982 frame. Browser guest shows `1280×800 · fps`. |
-| **Android 16 (SM-S711B)** | **Working — live on a physical device.** MediaProjection host on port 8095: `/info`, JPEG frames (124,444 bytes), accessibility input injection changed the on-screen password (768516 → 227170). | **Working — live.** Full-screen `ViewerActivity` displayed the macOS host; status tag `1512×982`. Portrait, landscape and 100 % custom scaling verified on the phone; the same APK also ran in landscape on the API 36 emulator. |
+| **Android 16 (SM-S711B)** | **Working — live on a physical device.** MediaProjection host on port 8095: `/info`, JPEG frames (124,444 bytes), accessibility input injection changed the on-screen password (768516 → 227170). The host now encodes PNG on demand and answers with an ETag. | **Working — live.** Full-screen `ViewerActivity` displayed the macOS host; status tag `1512×982`. Portrait, landscape and 100 % custom scaling verified on the phone; the same APK also ran in landscape on the API 36 emulator, where the new session login rendered `1280×800 · 11 fps`. |
 
 **WAN — working through the relay.** The host dials out to the rendezvous; no
 port forwarding or static IP is required. Guests resolve the peer ID and are
@@ -168,6 +168,20 @@ Additional fixes from the same review:
 - **Android host serves the guest UI**: the viewer page and the logo are
   copied into the app assets, so an Android host can be opened from any
   browser.
+
+### Live evidence for the new flows (2026-11-03)
+
+| Flow | Where | Result |
+| --- | --- | --- |
+| Browser guest, session cookie | macOS host → Chromium | overlay without an error message, password → `1280×800 · 22 fps`, the cookie survives a reload |
+| Browser guest, file transfer | macOS host → Chromium | Devices → Files: `browser-upload.txt` uploaded, listed and stored with the right name and content |
+| Android guest, session auth | macOS host → Android emulator | overlay without an error message, password → `1280×800 · 11 fps` |
+| Android Setup assistant | Android emulator | "Remote control (accessibility) · Action needed", "Notifications · Ready", "Battery optimisation · Action needed", "Screen capture · Ready" |
+| Desktop viewer, background input | macOS host → Tk viewer | live frame at `1280×800 · 11 fps`; input events are queued off the UI thread |
+| Desktop viewer, probe | macOS host → `office_viewer.py --probe` | `probe: OK 26003 bytes 1280x800` with the right password, `401` with a wrong one |
+| `--password-file` | macOS host | the agent starts with the password from a `0600` file; the LaunchAgent and the systemd unit use the same flag |
+| Relay, signed tunnel | macOS host → relay | tunnel connected, frame `200` through `/t/<peer>/`, audio stream aborted by the guest, host `ffmpeg` stopped, the tunnel stayed healthy |
+| Relay, admin token | relay | `--list-peers` without the token shows no address, with `--admin-token` the LAN address appears |
 
 ## Evidence
 

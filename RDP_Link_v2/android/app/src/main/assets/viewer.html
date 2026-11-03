@@ -433,6 +433,7 @@
       const img = new Image();
       img.onload = () => {
         frame.src = url;
+        everConnected = true;
         frameW = img.naturalWidth; frameH = img.naturalHeight;
         applyZoom();
         if (lastUrl) URL.revokeObjectURL(lastUrl);
@@ -493,7 +494,6 @@
 
   function begin() {
     connected = true;
-    everConnected = true;
     $('btnDisc').disabled = false;
     setStatus('Connecting…', 'warn');
     loadDisplays();
