@@ -123,9 +123,13 @@ def _macos_items():
                            "Blocked" if blocked else "Allowed",
                            None if not blocked else "Allow",
                            None if not blocked else (lambda: _mac_firewall(agent))))
-    # Background host at login.
-    plist = os.path.expanduser("~/Library/LaunchAgents/com.eminentailabs.rdplink.host.plist")
-    installed = os.path.exists(plist)
+    # Background host at login. The agent writes this LaunchAgent itself
+    # (office-rdp --install-service).
+    plists = [
+        os.path.expanduser("~/Library/LaunchAgents/com.eminentailabs.officerdp.plist"),
+        os.path.expanduser("~/Library/LaunchAgents/com.eminentailabs.rdplink.host.plist"),
+    ]
+    installed = any(os.path.exists(path) for path in plists)
     items.append(_item("service", "Start host at login",
                        "ok" if installed else "warn",
                        "Installed" if installed else "Not installed",
@@ -276,7 +280,7 @@ def _linux_items():
                        None if usbip else "Load",
                        None if usbip else (lambda: _pkexec("modprobe usbip-host"))))
     # User service
-    code, out = _run(["systemctl", "--user", "is-enabled", "rdp-link-host.service"])
+    code, out = _run(["systemctl", "--user", "is-enabled", "office-rdp.service"])
     enabled = code == 0 and "enabled" in out
     items.append(_item("service", "Host service at login",
                        "ok" if enabled else "warn",
@@ -311,7 +315,7 @@ def _linux_firewall():
 
 
 def _linux_service():
-    unit = os.path.expanduser("~/.config/systemd/user/rdp-link-host.service")
+    unit = os.path.expanduser("~/.config/systemd/user/office-rdp.service")
     os.makedirs(os.path.dirname(unit), exist_ok=True)
     agent = shutil.which("office-rdp") or "office-rdp"
     with open(unit, "w") as fh:
@@ -321,7 +325,7 @@ def _linux_service():
             "Restart=always\n\n"
             "[Install]\nWantedBy=default.target\n")
     _run(["systemctl", "--user", "daemon-reload"])
-    _run(["systemctl", "--user", "enable", "--now", "rdp-link-host.service"])
+    _run(["systemctl", "--user", "enable", "--now", "office-rdp.service"])
     return True
 
 

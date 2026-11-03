@@ -343,6 +343,9 @@
     history.replaceState(null, '', location.pathname + location.search);
   }
   let connected = false;
+  // Tracks whether a session was ever established, so the first screen does
+  // not accuse the visitor of a wrong password.
+  let everConnected = false;
   const SCALE_KEY = 'officerdp.scale:' + location.origin + location.pathname;
   let zoomMode = localStorage.getItem(SCALE_KEY) || 'fit';
   let lastUrl = null;
@@ -457,7 +460,7 @@
           connected = false;
           $('btnDisc').disabled = true;
           setStatus('Disconnected', 'error');
-          showOverlay('Wrong password or sharing stopped.');
+          showOverlay(everConnected ? 'Wrong password or sharing stopped.' : '');
           return;
         }
         setStatus('Reconnecting…', 'warn');
@@ -490,6 +493,7 @@
 
   function begin() {
     connected = true;
+    everConnected = true;
     $('btnDisc').disabled = false;
     setStatus('Connecting…', 'warn');
     loadDisplays();
@@ -691,15 +695,12 @@
     ? location.pathname : location.pathname + '/';
   const wsBase = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
     location.host + basePath;
-  // Media elements, WebSockets and links authenticate with the session
-  // cookie, so no credential is ever put into a URL.
-  const withPw = (path) => path;
 
   let audioEl = null, micWS = null, micRecorder = null, serialWS = null;
 
   async function loadCaps() {
     try {
-      const res = await fetch(withPw('capabilities'), { headers: authHeaders(), cache: 'no-store' });
+      const res = await fetch('capabilities', { headers: authHeaders(), cache: 'no-store' });
       if (!res.ok) throw new Error('capabilities ' + res.status);
       const caps = await res.json();
       $('secAudio').hidden = !caps.audio;
@@ -711,7 +712,7 @@
       links.innerHTML = '';
       (caps.ports || []).forEach((port) => {
         const a = document.createElement('a');
-        a.href = withPw('port/' + port + '/');
+        a.href = 'port/' + port + '/';
         a.target = '_blank';
         a.rel = 'noopener';
         a.textContent = 'Port ' + port;
@@ -732,7 +733,7 @@
 
   $('audioPlay').addEventListener('click', () => {
     if (!audioEl) audioEl = new Audio();
-    audioEl.src = withPw('audio');
+    audioEl.src = 'audio';
     audioEl.play().then(() => { $('audioState').textContent = 'Playing'; })
       .catch((e) => { $('audioState').textContent = 'Cannot play: ' + e.message; });
   });
@@ -748,7 +749,7 @@
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      micWS = new WebSocket(wsBase + withPw('mic'));
+      micWS = new WebSocket(wsBase + 'mic');
       micWS.binaryType = 'arraybuffer';
       micWS.onopen = () => {
         micRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
@@ -775,7 +776,7 @@
   $('cameraStart').addEventListener('click', () => {
     const img = $('cameraImg');
     img.hidden = false;
-    img.src = withPw('camera.mjpg?t=' + Date.now());
+    img.src = 'camera.mjpg?t=' + Date.now();
     $('cameraState').textContent = 'Streaming host camera';
   });
   $('cameraStop').addEventListener('click', () => {
@@ -786,7 +787,7 @@
   });
 
   $('serialConnect').addEventListener('click', () => {
-    serialWS = new WebSocket(wsBase + withPw('serial'));
+    serialWS = new WebSocket(wsBase + 'serial');
     serialWS.binaryType = 'arraybuffer';
     serialWS.onopen = () => { $('serialState').textContent = 'Connected'; };
     serialWS.onmessage = (ev) => {
@@ -804,7 +805,7 @@
   // -- USB/IP --------------------------------------------------------------
   async function refreshUSB() {
     try {
-      const res = await fetch(withPw('usb/list'), { headers: authHeaders(), cache: 'no-store' });
+      const res = await fetch('usb/list', { headers: authHeaders(), cache: 'no-store' });
       if (!res.ok) throw new Error('usb list ' + res.status);
       const data = await res.json();
       $('secUsb').hidden = !data.enabled;
@@ -837,7 +838,7 @@
   }
   async function usbAction(action, busid) {
     try {
-      const res = await fetch(withPw('usb/' + action), {
+      const res = await fetch('usb/' + action, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ busid })
       });
@@ -856,7 +857,7 @@
     try {
       shareCamStream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 } });
-      shareCamWS = new WebSocket(wsBase + withPw('camera/in'));
+      shareCamWS = new WebSocket(wsBase + 'camera/in');
       const video = document.createElement('video');
       video.srcObject = shareCamStream;
       video.muted = true;
