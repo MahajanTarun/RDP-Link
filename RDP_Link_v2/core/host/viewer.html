@@ -89,18 +89,19 @@
                     border-color: var(--border); box-shadow: none; cursor: not-allowed; }
 
   #stage {
-    position: relative; flex: 1; overflow: hidden; background: #f0f0f0;
-    display: flex; align-items: center; justify-content: center; touch-action: none;
-    padding: 12px;
+    position: relative; flex: 1; overflow: auto; background: #f0f0f0;
+    touch-action: pan-x pan-y; padding: 12px;
+  }
+  #stage.fill { overflow: hidden; }
+  #center {
+    min-width: 100%; min-height: 100%;
+    display: flex; align-items: center; justify-content: center;
   }
   #frame {
-    max-width: 100%; max-height: 100%; display: block; image-rendering: auto;
-    cursor: crosshair; border-radius: 2px;
+    display: block; image-rendering: auto; cursor: crosshair; touch-action: none;
+    border-radius: 2px; background: #000;
     box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.12), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
-    background: #000;
   }
-  #stage.actual { overflow: auto; align-items: flex-start; justify-content: flex-start; }
-  #stage.actual #frame { max-width: none; max-height: none; }
 
   #overlay { position: absolute; inset: 0; display: flex; align-items: center;
              justify-content: center; background: rgba(0, 0, 0, 0.45);
@@ -138,14 +139,15 @@
   }
   #toast.show { opacity: 1; }
 
-  #zoom {
+  #display, #zoom {
     height: 32px; padding: 0 8px; font-size: 14px; font-family: var(--font);
     color: var(--text); background: var(--bg-container); border: 1px solid var(--border);
     border-radius: var(--radius); cursor: pointer;
   }
-  #zoom:hover { border-color: var(--primary-hover); }
-  #zoom:focus { outline: none; border-color: var(--primary);
+  #display:hover, #zoom:hover { border-color: var(--primary-hover); }
+  #display:focus, #zoom:focus { outline: none; border-color: var(--primary);
                 box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1); }
+  #display[hidden] { display: none; }
 
   #keys { display: flex; gap: 8px; padding: 8px 12px; background: var(--bg-container);
           border-top: 1px solid var(--border-secondary); overflow-x: auto;
@@ -166,14 +168,16 @@
 <body>
 <div id="app">
   <header>
-    <div class="brand"><img class="mark" src="/logo.png" alt="" /><span class="name">RDP <span>Link</span></span></div>
+    <div class="brand"><img class="mark" src="logo.png" alt="" /><span class="name">RDP <span>Link</span></span></div>
     <div id="status">Not connected</div>
     <div class="spacer"></div>
+    <select id="display" title="Host display" aria-label="Host display" hidden></select>
     <select id="zoom" title="Screen scaling" aria-label="Screen scaling">
-      <option value="auto">Auto fit</option>
+      <option value="fit">Fit</option>
+      <option value="fill">Fill</option>
+      <option value="actual">1:1</option>
       <option value="0.5">50%</option>
       <option value="0.75">75%</option>
-      <option value="1">100%</option>
       <option value="1.25">125%</option>
       <option value="1.5">150%</option>
     </select>
@@ -183,7 +187,7 @@
   </header>
 
   <div id="stage">
-    <img id="frame" alt="Remote screen" draggable="false" />
+    <div id="center"><img id="frame" alt="Remote screen" draggable="false" /></div>
     <div id="overlay">
       <div class="card">
         <h1>Connect to this device</h1>
@@ -191,7 +195,7 @@
            this browser only.</p>
         <label for="pw">Access password</label>
         <input id="pw" type="password" autocomplete="current-password"
-               inputmode="numeric" placeholder="••••••" />
+               placeholder="Access password" />
         <div class="err" id="err"></div>
         <div class="actions">
           <button class="primary" id="btnConnect">Connect</button>
@@ -235,7 +239,8 @@
     history.replaceState(null, '', location.pathname + location.search);
   }
   let connected = false;
-  let zoomMode = 'auto';
+  const SCALE_KEY = 'officerdp.scale:' + location.origin + location.pathname;
+  let zoomMode = localStorage.getItem(SCALE_KEY) || 'fit';
   let lastUrl = null;
   let etag = '';
   let frameTimes = [], lastFrameAt = 0;
@@ -269,7 +274,7 @@
   async function fetchFrame() {
     const headers = { ...authHeaders(), cache: 'no-store' };
     if (etag) headers['If-None-Match'] = etag;
-    const res = await fetch('/frame.jpg', { headers, cache: 'no-store' });
+    const res = await fetch('frame.jpg', { headers, cache: 'no-store' });
     if (res.status === 401 || res.status === 403) {
       const e = new Error('unauthorized'); e.code = 401; throw e;
     }
@@ -280,20 +285,25 @@
   }
 
   function applyZoom() {
-    if (zoomMode === 'auto') {
-      frame.style.width = '';
-      frame.style.height = '';
-      frame.style.maxWidth = '100%';
-      frame.style.maxHeight = '100%';
-      stage.classList.remove('actual');
-      return;
+    if (!frameW || !frameH) return;
+    const pad = 24;
+    const availW = Math.max(stage.clientWidth - pad, 1);
+    const availH = Math.max(stage.clientHeight - pad, 1);
+    let scale;
+    if (zoomMode === 'fit') {
+      scale = Math.min(availW / frameW, availH / frameH);   // may upscale
+    } else if (zoomMode === 'fill') {
+      scale = Math.max(availW / frameW, availH / frameH);   // crops
+    } else if (zoomMode === 'actual') {
+      scale = 1;
+    } else {
+      scale = Number(zoomMode) || 1;
     }
-    const z = Number(zoomMode) || 1;
-    frame.style.maxWidth = 'none';
-    frame.style.maxHeight = 'none';
-    frame.style.width = Math.round(frameW * z) + 'px';
-    frame.style.height = Math.round(frameH * z) + 'px';
-    stage.classList.add('actual');
+    const w = Math.max(Math.round(frameW * scale), 1);
+    const h = Math.max(Math.round(frameH * scale), 1);
+    frame.style.width = w + 'px';
+    frame.style.height = h + 'px';
+    stage.classList.toggle('fill', zoomMode === 'fill');
   }
 
   function drawBlob(blob) {
@@ -355,6 +365,7 @@
     connected = true;
     $('btnDisc').disabled = false;
     setStatus('Connecting…', 'warn');
+    loadDisplays();
     loop();
   }
 
@@ -388,20 +399,20 @@
     if (moveTimer) return;
     moveTimer = setTimeout(() => {
       moveTimer = null;
-      if (moveQueued) post('/input', { type: 'move', ...moveQueued });
+      if (moveQueued) post('input', { type: 'move', ...moveQueued });
     }, 40);
   });
 
   frame.addEventListener('mousedown', (ev) => {
     ev.preventDefault();
     const p = toRemote(ev);
-    post('/input', { type: 'click', x: p.x, y: p.y, button: ev.button === 2 ? 3 : 1 });
+    post('input', { type: 'click', x: p.x, y: p.y, button: ev.button === 2 ? 3 : 1 });
   });
   frame.addEventListener('contextmenu', (ev) => ev.preventDefault());
 
   frame.addEventListener('wheel', (ev) => {
     ev.preventDefault();
-    post('/input', { type: 'wheel', delta: ev.deltaY > 0 ? -1 : 1 });
+    post('input', { type: 'wheel', delta: ev.deltaY > 0 ? -1 : 1 });
   }, { passive: false });
 
   // -- touch ---------------------------------------------------------------
@@ -419,7 +430,7 @@
     const dx = t.clientX - touchStart.x, dy = t.clientY - touchStart.y;
     if (Math.abs(dx) > 12 || Math.abs(dy) > 12) {
       touchStart.moved = true;
-      post('/input', { type: 'wheel', delta: dy > 0 ? -1 : 1 });
+      post('input', { type: 'wheel', delta: dy > 0 ? -1 : 1 });
       touchStart.x = t.clientX; touchStart.y = t.clientY;
     }
   }, { passive: true });
@@ -428,7 +439,7 @@
     if (!touchStart) return;
     if (!touchStart.moved && Date.now() - touchStart.at < 500) {
       const p = toRemote({ clientX: touchStart.x, clientY: touchStart.y });
-      post('/input', { type: 'click', x: p.x, y: p.y, button: 1 });
+      post('input', { type: 'click', x: p.x, y: p.y, button: 1 });
     }
     touchStart = null;
   }, { passive: true });
@@ -446,26 +457,26 @@
     if (ev.ctrlKey || ev.metaKey || ev.altKey) return; // keep browser shortcuts
     if (SPECIAL[ev.key]) {
       ev.preventDefault();
-      post('/input', { type: 'key', key: SPECIAL[ev.key] });
+      post('input', { type: 'key', key: SPECIAL[ev.key] });
     } else if (ev.key.length === 1) {
       ev.preventDefault();
-      post('/input', { type: 'text', text: ev.key });
+      post('input', { type: 'text', text: ev.key });
     }
   });
 
   document.querySelectorAll('#keys [data-key]').forEach((btn) => {
-    btn.addEventListener('click', () => post('/input', { type: 'key', key: btn.dataset.key }));
+    btn.addEventListener('click', () => post('input', { type: 'key', key: btn.dataset.key }));
   });
 
   $('btnType').addEventListener('click', () => {
     const text = prompt('Text to type on the remote device:');
-    if (text) post('/input', { type: 'text', text });
+    if (text) post('input', { type: 'text', text });
   });
 
   // -- clipboard -----------------------------------------------------------
   $('btnClip').addEventListener('click', async () => {
     try {
-      const res = await fetch('/clipboard', { headers: authHeaders(), cache: 'no-store' });
+      const res = await fetch('clipboard', { headers: authHeaders(), cache: 'no-store' });
       const data = await res.json();
       const text = data.text || '';
       try {
@@ -480,11 +491,48 @@
   // -- view controls -------------------------------------------------------
   $('zoom').addEventListener('change', (ev) => {
     zoomMode = ev.target.value;
+    localStorage.setItem(SCALE_KEY, zoomMode);
     applyZoom();
-    toast(zoomMode === 'auto' ? 'Scale: auto fit' : 'Scale: ' + Math.round(Number(zoomMode) * 100) + '%');
+    const labels = { fit: 'Fit', fill: 'Fill', actual: '1:1' };
+    toast('Scale: ' + (labels[zoomMode] || Math.round(Number(zoomMode) * 100) + '%'));
   });
-  window.addEventListener('orientationchange', () => {
-    if (zoomMode === 'auto') setTimeout(applyZoom, 150);
+  $('zoom').value = zoomMode;
+  window.addEventListener('resize', applyZoom);
+  window.addEventListener('orientationchange', () => setTimeout(applyZoom, 150));
+
+  // -- host display picker --------------------------------------------------
+  async function loadDisplays() {
+    try {
+      const res = await fetch('displays', { headers: authHeaders(), cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = data.displays || [];
+      if (list.length < 2) return;
+      const sel = $('display');
+      sel.innerHTML = '';
+      list.forEach((d) => {
+        const opt = document.createElement('option');
+        opt.value = String(d.index);
+        const size = d.width && d.height ? ` (${d.width}×${d.height})` : '';
+        opt.textContent = `Display ${d.index + 1}${size}`;
+        if (d.index === data.active) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.hidden = false;
+    } catch (_) { /* older hosts */ }
+  }
+  $('display').addEventListener('change', async (ev) => {
+    const index = Number(ev.target.value);
+    try {
+      const res = await fetch('display', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ index })
+      });
+      if (!res.ok) throw new Error('display ' + res.status);
+      etag = '';
+      toast('Switched to display ' + (index + 1));
+    } catch (_) { toast('Could not switch display'); }
   });
 
   $('btnFull').addEventListener('click', async () => {
@@ -516,6 +564,7 @@
     connected = true;
     $('btnDisc').disabled = false;
     setStatus('Connecting…', 'warn');
+    loadDisplays();
     loop();
   } else {
     showOverlay();

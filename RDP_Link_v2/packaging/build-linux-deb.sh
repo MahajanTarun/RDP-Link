@@ -51,8 +51,10 @@ Exec=/usr/bin/office-rdp --host --port 8088
 Terminal=false
 NoDisplay=true
 PDESKTOP
-  docker run --rm -v "$art":/work -v "$STAGE":/out \
-    alpine:3.19 sh -c "apk add dpkg >/dev/null && dpkg-deb --build /work /out/rdplink-linux-${arch}.deb"
+  # Build from a copy inside the container: tar on a shared Docker volume on
+  # macOS can see metadata churn and abort with "file changed as we read it".
+  docker run --rm -v "$art":/work:ro -v "$STAGE":/out \
+    alpine:3.19 sh -c "apk add dpkg >/dev/null && cp -a /work /tmp/pkg && dpkg-deb --build /tmp/pkg /out/rdplink-linux-${arch}.deb"
   mv "$STAGE/rdplink-linux-${arch}.deb" "$DIST/rdplink-linux-${arch}.deb"
   rm -rf "$art"
 }

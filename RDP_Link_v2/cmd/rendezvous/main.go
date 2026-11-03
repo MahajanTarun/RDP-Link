@@ -10,8 +10,11 @@ import (
 
 func main() {
 	addr := flag.String("listen", ":8080", "listen address")
+	cert := flag.String("tls-cert", "", "TLS certificate file (enables HTTPS/WSS)")
+	key := flag.String("tls-key", "", "TLS private key file")
+	publicURL := flag.String("public-url", "", "public base URL used in relay links (e.g. https://relay.example.com)")
 	flag.Parse()
-	if err := rendezvous.Run(*addr); err != nil {
+	if err := rendezvous.RunOptions(*addr, *cert, *key, *publicURL); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

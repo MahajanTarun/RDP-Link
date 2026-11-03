@@ -20,6 +20,10 @@ this validation pass, on physical hardware.
 | **Windows (installer + app)** | **Working under Wine — test pattern.** Real GDI capture needs Windows hardware; under Wine `office-rdp.exe --host --test-pattern` served `/info`, a 1280×800 JPEG, changing ETags, `/input` 204 and `/ui` 200. | **Working — live under Wine.** `rdp-link.exe` (PyInstaller, no Python needed) renders the Ant Design launcher; `--viewer --probe` returned a 1512×982 frame. Browser guest shows `1280×800 · fps`. |
 | **Android 16 (SM-S711B)** | **Working — live on a physical device.** MediaProjection host on port 8095: `/info`, JPEG frames (124,444 bytes), accessibility input injection changed the on-screen password (768516 → 227170). | **Working — live.** Full-screen `ViewerActivity` displayed the macOS host; status tag `1512×982`. Portrait, landscape and 100 % custom scaling verified on the phone; the same APK also ran in landscape on the API 36 emulator. |
 
+**WAN — working through the relay.** The host dials out to the rendezvous; no
+port forwarding or static IP is required. Guests resolve the peer ID and are
+routed through the tunnel (validated over HTTP and TLS).
+
 **Browser guest (all platforms) — working.** Every host serves the same
 `viewer.html`, so any device with a browser can connect without installing
 anything: password login, JPEG stream, click/right-click/wheel/touch, keyboard,
@@ -27,6 +31,46 @@ clipboard, auto-fit or custom scale, fullscreen, ETag-aware polling,
 responsive header.
 
 ## UI
+
+### Display fitting and orientation
+
+- **Fit** scales up as well as down and fills the available axis without
+  cropping (the default).
+- **Fill** covers the window and crops the overflow.
+- **1:1** renders host pixels 1:1 with scrollbars.
+- **50–150 %** custom scaling, remembered per host.
+- The viewer lists the host's monitors from `/displays` and switches with
+  `POST /display` when more than one exists.
+- Tk adds **Match window**, which sizes the window to the host aspect ratio.
+- Android and the browser reflow on rotation; the Android activity keeps the
+  WebView session across orientation changes.
+
+Validated: fit upscales, fill crops correctly, 1:1 and 150 % scroll, and the
+macOS host reports `1512×982` through `/displays`.
+
+### WAN relay
+
+The rendezvous now carries a reverse tunnel, so hosts behind NAT and dynamic
+IPs are reachable by peer ID:
+
+```
+$ curl -s 'http://192.168.1.14:18080/resolve?peerId=033976933'
+{"peerId":"033976933", ..., "relay":true,
+ "url":"http://192.168.1.14:18080/t/033976933/"}
+
+$ curl -s -o f.jpg -w '%{http_code} %{size_download}\n' \
+    'http://192.168.1.14:18080/t/033976933/frame.jpg?password=relay1'
+200 26603
+
+# TLS relay
+$ curl -sk -o /dev/null -w '%{http_code}\n' \
+    'https://127.0.0.1:18443/t/033976933/frame.jpg?password=relay2'
+200
+```
+
+The Android app resolved `033976933` through the relay and streamed
+`1280×800 · 11 fps`; the desktop/browser viewer does the same. See
+[`WAN.md`](WAN.md).
 
 All four surfaces use the Ant Design 5 light theme (Tailwind-style spacing,
 white cards on `#F5F5F5`, `#1677FF` primary, 6/8 px radii, Ant Design tags) and
@@ -207,7 +251,7 @@ The native arm64 package is fully validated and the code path is identical.
 | `dist/windows/RDPLink-setup.exe` | 23 MB | NSIS; ships `rdp-link.exe`, CGO `office-rdp.exe`, rendezvous, shortcuts, Add/Remove Programs, firewall rule |
 | `dist/windows/rdp-link.exe` | 17 MB | PyInstaller onefile launcher + bundled viewer (no Python on target) |
 | `dist/linux/rdplink-linux-arm64.deb` | 24 MB | `office-rdp`, `office-rdp-rendezvous`, `rdp-link`, docs |
-| `dist/linux/rdplink-linux-amd64.deb` | 25 MB | same payload for x86-64 |
+| `dist/linux/rdplink-linux-amd64.deb` | 26 MB | same payload for x86-64 |
 | `dist/linux/rdplink-linux.tar.gz` | 80 MB | both architectures plus the launcher |
 | `dist/android/RDPLink-android-release.apk` | 21 MB | release-signed, `versionCode 2`, Ant Design UI |
 | `dist/android/RDPLink-android-release.aab` | 8.4 MB | Play upload bundle |

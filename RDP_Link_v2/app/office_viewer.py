@@ -49,6 +49,35 @@ except Exception:  # pragma: no cover - depends on the runtime image
     HAVE_PIL = False
 
 
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "office-rdp")
+VIEWER_CONFIG = os.path.join(CONFIG_DIR, "viewer.json")
+
+
+def _load_viewer_settings(host):
+    try:
+        with open(VIEWER_CONFIG) as fh:
+            data = json.load(fh)
+        return data.get(host, {})
+    except Exception:
+        return {}
+
+
+def _save_viewer_settings(host, values):
+    try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        data = {}
+        try:
+            with open(VIEWER_CONFIG) as fh:
+                data = json.load(fh)
+        except Exception:
+            data = {}
+        data[host] = values
+        with open(VIEWER_CONFIG, "w") as fh:
+            json.dump(data, fh, indent=2)
+    except Exception:
+        pass
+
+
 class Chip(tk.Label):
     """Toolbar button that keeps its colours on every platform.
 
@@ -84,9 +113,10 @@ class Viewer:
     def __init__(self, host_url, password=None):
         self.host_url = host_url.rstrip("/")
         self.password = password
+        self._settings = _load_viewer_settings(self.host_url)
         self.root = tk.Tk()
         self.root.title(f"RDP Link — {self.host_url}")
-        self.root.geometry("1200x760")
+        self.root.geometry(self._settings.get("geometry", "1200x760"))
         self.root.minsize(860, 560)
         self.root.configure(bg=BG)
         style = ttk.Style(self.root)
@@ -100,12 +130,17 @@ class Viewer:
 
         # Right-hand actions first so they keep a stable position.
         Chip(toolbar, "Disconnect", self._close).pack(side="right", padx=(0, 14))
-        self.zoom_var = tk.StringVar(value="Auto fit")
-        zoom = ttk.Combobox(toolbar, textvariable=self.zoom_var, width=9,
+        self.zoom_var = tk.StringVar(value=self._settings.get("mode", "Fit"))
+        zoom = ttk.Combobox(toolbar, textvariable=self.zoom_var, width=7,
                             state="readonly",
-                            values=("Auto fit", "50%", "75%", "100%", "125%", "150%"))
+                            values=("Fit", "Fill", "1:1", "50%", "75%", "125%", "150%"))
         zoom.pack(side="right", padx=(0, 8))
-        zoom.bind("<<ComboboxSelected>>", lambda _e: self._render_current())
+        zoom.bind("<<ComboboxSelected>>", lambda _e: self._on_mode_change())
+        self.display_var = tk.StringVar(value="Display")
+        self.display_box = ttk.Combobox(toolbar, textvariable=self.display_var,
+                                        width=12, state="readonly")
+        self.display_box.bind("<<ComboboxSelected>>", self._switch_display)
+        Chip(toolbar, "Match window", self._match_window).pack(side="right", padx=(0, 8))
         Chip(toolbar, "Fullscreen", self._toggle_fullscreen).pack(
             side="right", padx=(0, 8))
         Chip(toolbar, "Upload", self._upload_file).pack(side="right", padx=(0, 8))
@@ -174,18 +209,79 @@ class Viewer:
         self.root.bind("<F11>", self._toggle_fullscreen)
         self.root.protocol("WM_DELETE_WINDOW", self._close)
 
+        self.root.after(800, self._load_displays)
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._clip_loop, daemon=True).start()
 
     # -- rendering -----------------------------------------------------------
     def _zoom_scale(self, canvas_w, canvas_h, image_w, image_h):
-        mode = self.zoom_var.get() if hasattr(self, "zoom_var") else "Auto fit"
-        if mode == "Auto fit":
-            return min(canvas_w / image_w, canvas_h / image_h, 1.0)
+        mode = self.zoom_var.get() if hasattr(self, "zoom_var") else "Fit"
+        if mode == "Fit":
+            return min(canvas_w / image_w, canvas_h / image_h)  # may upscale
+        if mode == "Fill":
+            return max(canvas_w / image_w, canvas_h / image_h)
+        if mode == "1:1":
+            return 1.0
         try:
             return int(mode.rstrip("%")) / 100.0
         except ValueError:
             return 1.0
+
+    def _on_mode_change(self):
+        self._settings["mode"] = self.zoom_var.get()
+        _save_viewer_settings(self.host_url, self._settings)
+        self._render_current()
+
+    def _match_window(self):
+        if not self._frame_size[0]:
+            return
+        iw, ih = self._frame_size
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        scale = min(sw * 0.8 / iw, sh * 0.8 / ih, 1.5)
+        width = max(int(iw * scale), 640)
+        height = max(int(ih * scale) + 132, 480)  # toolbar + footer
+        self.root.geometry(f"{width}x{height}+80+60")
+        self.root.after(120, self._render_current)
+
+    def _load_displays(self):
+        try:
+            url = self.host_url + "/displays"
+            with urllib.request.urlopen(url, timeout=4) as response:
+                data = json.load(response)
+            items = data.get("displays") or []
+            if len(items) < 2:
+                return
+            values = []
+            for item in items:
+                size = f"{item.get('width')}×{item.get('height')}" if item.get("width") else ""
+                values.append(f"Display {item['index'] + 1} {size}".strip())
+            self.display_box.configure(values=values)
+            active = int(data.get("active", 0))
+            if 0 <= active < len(values):
+                self.display_var.set(values[active])
+            self._displays = items
+            if not self.display_box.winfo_ismapped():
+                self.display_box.pack(side="right", padx=(0, 8))
+        except Exception:
+            pass
+
+    def _switch_display(self, _event=None):
+        values = self.display_box.cget("values")
+        try:
+            index = list(values).index(self.display_var.get())
+        except ValueError:
+            return
+        try:
+            body = json.dumps({"index": index}).encode()
+            req = urllib.request.Request(
+                self._auth_url("/display"), data=body, method="POST",
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+            self._set_status(f"Switched to display {index + 1}", "connecting")
+        except Exception as exc:
+            self._set_status(f"Display switch failed: {exc}", "error")
 
     def _render_current(self):
         if getattr(self, "_pil_image", None) is None and getattr(self, "photo", None) is None:
@@ -316,6 +412,29 @@ class Viewer:
         canvas_w = max(self.canvas.winfo_width(), 1)
         canvas_h = max(self.canvas.winfo_height(), 1)
         image_w, image_h = self._frame_size
+        mode = self.zoom_var.get() if hasattr(self, "zoom_var") else "Fit"
+
+        if mode == "Fill":
+            target = canvas_w / canvas_h
+            if image_w / image_h > target:
+                crop_w = max(int(image_h * target), 1)
+                crop_h = image_h
+                left, top = (image_w - crop_w) // 2, 0
+            else:
+                crop_w = image_w
+                crop_h = max(int(image_w / target), 1)
+                left, top = 0, (image_h - crop_h) // 2
+            resized = self._pil_image.crop(
+                (left, top, left + crop_w, top + crop_h)).resize(
+                    (canvas_w, canvas_h), Image.LANCZOS)
+            self.photo = ImageTk.PhotoImage(resized)
+            self._scale = canvas_w / crop_w
+            self._offset = (0, 0)
+            self.canvas.delete("frame")
+            self.canvas.create_image(0, 0, anchor="nw", image=self.photo, tags="frame")
+            self.canvas.configure(scrollregion=(0, 0, canvas_w, canvas_h))
+            return
+
         scale = self._zoom_scale(canvas_w, canvas_h, image_w, image_h)
         width = max(int(image_w * scale), 1)
         height = max(int(image_h * scale), 1)
@@ -457,6 +576,12 @@ class Viewer:
     def _close(self):
         self._stop = True
         try:
+            self._settings["geometry"] = self.root.geometry()
+            self._settings["mode"] = self.zoom_var.get()
+            _save_viewer_settings(self.host_url, self._settings)
+        except Exception:
+            pass
+        try:
             os.unlink(self._tmp.name)
         except OSError:
             pass
@@ -503,10 +628,16 @@ def main():
     parser.add_argument("--password", default=None)
     parser.add_argument("--probe", action="store_true",
                         help="fetch one frame, print its size, then exit")
+    parser.add_argument("--scale", default=None,
+                        help="startup scale: Fit, Fill, 1:1, or 50, 75, 125, 150")
     args = parser.parse_args()
     if args.probe:
         sys.exit(probe(args.host_url, password=args.password))
-    Viewer(args.host_url, password=args.password).run()
+    viewer = Viewer(args.host_url, password=args.password)
+    if args.scale:
+        viewer.zoom_var.set(args.scale)
+        viewer._on_mode_change()
+    viewer.run()
 
 
 if __name__ == "__main__":

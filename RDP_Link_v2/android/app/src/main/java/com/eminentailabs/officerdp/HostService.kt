@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -20,9 +22,12 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import fi.iki.elonen.NanoHTTPD
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
 import java.net.HttpURLConnection
 import java.net.NetworkInterface
 import java.net.URL
@@ -306,9 +311,10 @@ class HostService : Service() {
                     )
                 }
                 "/input" -> handleInput(session)
-                "/clipboard" -> newFixedLengthResponse(
-                    Response.Status.OK, "application/json", "{\"text\":\"\"}"
-                )
+                "/clipboard" -> handleClipboard(session)
+                "/files" -> handleFiles()
+                "/download" -> handleDownload(session)
+                "/upload" -> handleUpload(session)
                 "/health" -> newFixedLengthResponse(
                     Response.Status.OK, "application/json", "{\"status\":\"ok\"}"
                 )
@@ -321,6 +327,91 @@ class HostService : Service() {
         private fun noFrame(): Response = newFixedLengthResponse(
             Response.Status.SERVICE_UNAVAILABLE, "text/plain", "no frame"
         )
+
+
+        // -- clipboard and file transfer (parity with the desktop host) ------
+        private val inbox: File
+            get() = File(service.filesDir, "inbox").apply { mkdirs() }
+
+        private fun bodyText(session: IHTTPSession): String {
+            val map = HashMap<String, String>()
+            try {
+                session.parseBody(map)
+            } catch (_: Exception) {
+            }
+            return map["postData"] ?: ""
+        }
+
+        private fun handleClipboard(session: IHTTPSession): Response {
+            val cm = service.getSystemService(ClipboardManager::class.java)
+            if (session.method == NanoHTTPD.Method.POST) {
+                val text = try {
+                    JSONObject(bodyText(session)).optString("text")
+                } catch (_: Exception) {
+                    ""
+                }
+                cm.setPrimaryClip(ClipData.newPlainText("RDP Link", text))
+                return newFixedLengthResponse(Response.Status.NO_CONTENT, "text/plain", "")
+            }
+            val text = cm.primaryClip
+                ?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)
+                ?.coerceToText(service)
+                ?.toString() ?: ""
+            return newFixedLengthResponse(
+                Response.Status.OK, "application/json",
+                JSONObject().put("text", text).toString()
+            )
+        }
+
+        private fun handleFiles(): Response {
+            val names = inbox.listFiles()
+                ?.filter { it.isFile }
+                ?.map { it.name }
+                ?.sorted()
+                ?: emptyList()
+            return newFixedLengthResponse(
+                Response.Status.OK, "application/json", JSONArray(names).toString()
+            )
+        }
+
+        private fun handleDownload(session: IHTTPSession): Response {
+            val raw = session.parameters["name"]?.firstOrNull() ?: ""
+            val file = File(inbox, File(raw).name)
+            if (!file.isFile) {
+                return newFixedLengthResponse(
+                    Response.Status.NOT_FOUND, "text/plain", "not found"
+                )
+            }
+            return newFixedLengthResponse(
+                Response.Status.OK, "application/octet-stream",
+                FileInputStream(file), file.length()
+            )
+        }
+
+        private fun handleUpload(session: IHTTPSession): Response {
+            val length = session.headers["content-length"]?.toLongOrNull() ?: 0L
+            if (length > 256L * 1024 * 1024) {
+                return newFixedLengthResponse(
+                    Response.Status.PAYLOAD_TOO_LARGE, "text/plain", "too large"
+                )
+            }
+            val files = HashMap<String, String>()
+            try {
+                session.parseBody(files)
+            } catch (_: Exception) {
+            }
+            val tmp = files.values.firstOrNull { it.isNotEmpty() }
+            val requested = session.parameters["name"]?.firstOrNull() ?: "upload.bin"
+            val target = File(inbox, File(requested).name)
+            if (tmp != null && File(tmp).isFile) {
+                File(tmp).copyTo(target, overwrite = true)
+            } else {
+                val raw = files["postData"]
+                if (raw != null) target.writeBytes(raw.toByteArray())
+            }
+            return newFixedLengthResponse(Response.Status.NO_CONTENT, "text/plain", "")
+        }
 
         private fun handleInput(session: IHTTPSession): Response {
             val body = HashMap<String, String>()

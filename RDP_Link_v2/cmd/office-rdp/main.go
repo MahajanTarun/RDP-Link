@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
 	"flag"
@@ -22,9 +24,29 @@ import (
 	"github.com/eminentailabs/office-rdp/core/mdns"
 	"github.com/eminentailabs/office-rdp/core/pairing"
 	"github.com/eminentailabs/office-rdp/core/peers"
+	"github.com/eminentailabs/office-rdp/core/relay"
 	"github.com/kbinani/screenshot"
 	"github.com/pion/mediadevices"
 )
+
+// relayHTTPClient returns a client that trusts the relay's certificate (or
+// skips verification for local testing).
+func relayHTTPClient(insecure bool, caFile string) *http.Client {
+	// #nosec G402 -- explicit testing opt-in (--relay-insecure).
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: insecure}
+	if caFile != "" {
+		if pem, err := os.ReadFile(caFile); err == nil { // #nosec G304 -- operator-supplied CA path
+			pool := x509.NewCertPool()
+			if pool.AppendCertsFromPEM(pem) {
+				tlsConfig.RootCAs = pool
+			}
+		}
+	}
+	return &http.Client{
+		Timeout:   20 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+	}
+}
 
 func main() {
 	version := flag.Bool("version", false, "print version")
@@ -46,6 +68,8 @@ func main() {
 	list := flag.Bool("list", false, "list peers")
 	alias := flag.String("alias", "", "override alias")
 	ui := flag.Bool("ui", false, "open the control panel in a browser")
+	relayInsecure := flag.Bool("relay-insecure", false, "skip TLS verification for the relay (testing only)")
+	relayCA := flag.String("relay-ca", "", "custom CA bundle for the relay's TLS certificate")
 	testPattern := flag.Bool("test-pattern", false, "stream a synthetic test pattern instead of the screen")
 	flag.Parse()
 
@@ -115,6 +139,7 @@ func main() {
 			fmt.Println("mDNS: failed to advertise:", err)
 		}
 		if *rendezvous != "" {
+			rendezvousClient := relayHTTPClient(*relayInsecure, *relayCA)
 			go func() {
 				for {
 					body, _ := json.Marshal(map[string]any{
@@ -122,7 +147,7 @@ func main() {
 						"caps": map[string]any{"host": true},
 						"addr": fmt.Sprintf("%s:%d", ag.LANIP, *port),
 					})
-					resp, err := http.Post(*rendezvous+"/register", "application/json", bytes.NewReader(body))
+					resp, err := rendezvousClient.Post(*rendezvous+"/register", "application/json", bytes.NewReader(body))
 					if err == nil {
 						resp.Body.Close()
 					}
@@ -130,10 +155,19 @@ func main() {
 				}
 			}()
 			fmt.Printf("Rendezvous: %s\n", *rendezvous)
+			fmt.Printf("Relay: %s (tunnel for %s)\n", *rendezvous, ag.PeerID)
+			go (&relay.Client{
+				Rendezvous: *rendezvous,
+				PeerID:     ag.PeerID,
+				Password:   pw,
+				LocalPort:  *port,
+				Insecure:   *relayInsecure,
+				CAFile:     *relayCA,
+			}).Run()
 			go ag.RunSignaling(*rendezvous)
 			go func() {
 				time.Sleep(2 * time.Second)
-				resp, err := http.Get(*rendezvous + "/policy?peerId=" + id.Formatted())
+				resp, err := rendezvousClient.Get(*rendezvous + "/policy?peerId=" + id.Formatted())
 				if err != nil || resp.StatusCode != 200 {
 					if resp != nil {
 						resp.Body.Close()

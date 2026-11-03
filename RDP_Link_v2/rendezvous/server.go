@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+// normalizeID makes "033 976 933" and "033976933" the same peer.
+func normalizeID(id string) string { return strings.ReplaceAll(id, " ", "") }
 
 type PeerInfo struct {
 	PeerID   string         `json:"peerId"`
@@ -18,19 +22,26 @@ type PeerInfo struct {
 	Caps     map[string]any `json:"caps"`
 	LastSeen time.Time      `json:"lastSeen"`
 	Addr     string         `json:"addr,omitempty"`
+	Relay    bool           `json:"relay,omitempty"`
+	URL      string         `json:"url,omitempty"`
 }
 
 type Server struct {
-	mu       sync.RWMutex
-	peers    map[string]*PeerInfo
-	conns    map[string]*websocket.Conn
-	pairs    map[string]pendingPair
-	policies map[string]map[string]any
-	upgrader websocket.Upgrader
+	mu           sync.RWMutex
+	peers        map[string]*PeerInfo
+	conns        map[string]*websocket.Conn
+	pairs        map[string]pendingPair
+	policies     map[string]map[string]any
+	tunnels      map[string]*tunnel
+	tunnelTokens map[string]string
+	publicURL    string
+	upgrader     websocket.Upgrader
 }
 
 func NewServer() *Server {
-	return &Server{peers: map[string]*PeerInfo{}, conns: map[string]*websocket.Conn{}, pairs: map[string]pendingPair{}, policies: map[string]map[string]any{},
+	return &Server{peers: map[string]*PeerInfo{}, conns: map[string]*websocket.Conn{},
+		pairs: map[string]pendingPair{}, policies: map[string]map[string]any{},
+		tunnels: map[string]*tunnel{}, tunnelTokens: map[string]string{},
 		upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}}
 }
 
@@ -48,6 +59,7 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "peerId required", http.StatusBadRequest)
 		return
 	}
+	info.PeerID = normalizeID(info.PeerID)
 	info.LastSeen = time.Now()
 	if info.Status == "" {
 		info.Status = "online"
@@ -65,6 +77,7 @@ func (s *Server) Resolve(w http.ResponseWriter, r *http.Request) {
 		// allow path /resolve/{id}
 		id = r.URL.Path[len("/resolve/"):]
 	}
+	id = normalizeID(id)
 	s.mu.RLock()
 	p, ok := s.peers[id]
 	s.mu.RUnlock()
@@ -77,8 +90,16 @@ func (s *Server) Resolve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "offline", http.StatusGone)
 		return
 	}
+	out := *p
+	s.mu.RLock()
+	_, tunnelled := s.tunnels[id]
+	s.mu.RUnlock()
+	if tunnelled {
+		out.Relay = true
+		out.URL = s.relayURL(r, id)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(p)
+	json.NewEncoder(w).Encode(out)
 }
 
 func (s *Server) List(w http.ResponseWriter, r *http.Request) {
@@ -247,6 +268,10 @@ func (s *Server) GetPolicy(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.URL.Path == "/tunnel":
+		s.handleTunnel(w, r)
+	case len(r.URL.Path) > 3 && r.URL.Path[:3] == "/t/":
+		s.handleProxy(w, r)
 	case r.URL.Path == "/register" && r.Method == http.MethodPost:
 		s.Register(w, r)
 	case r.URL.Path == "/resolve" || (len(r.URL.Path) > len("/resolve/") && r.URL.Path[:len("/resolve/")] == "/resolve/"):
@@ -276,18 +301,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Run starts the HTTP server.
-func Run(addr string) error {
+func Run(addr string) error { return RunOptions(addr, "", "", "") }
+
+// RunOptions starts the server with optional TLS and a public base URL used in
+// relay links (for example https://relay.example.com).
+func RunOptions(addr, certFile, keyFile, publicURL string) error {
 	s := NewServer()
+	s.publicURL = publicURL
 	fmt.Printf("rendezvous listening on %s\n", addr)
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           s,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 	// #nosec G102 -- the rendezvous server is intentionally reachable on its listen address.
+	if certFile != "" && keyFile != "" {
+		fmt.Printf("relay links: %s\n", publicURL)
+		return server.ListenAndServeTLS(certFile, keyFile)
+	}
 	return server.ListenAndServe()
 }
 

@@ -186,6 +186,38 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 `/input` must return `204`, and a follow-up `uiautomator dump` must show the
 changed value.
 
+### 4.2c WAN relay
+
+```sh
+office-rdp-rendezvous --listen :18080 --public-url http://192.168.1.14:18080
+office-rdp --host --port 18530 --password relay1 \
+  --rendezvous http://192.168.1.14:18080
+
+curl -s 'http://192.168.1.14:18080/resolve?peerId=033976933'
+# {"relay":true,"url":"http://192.168.1.14:18080/t/033976933/",...}
+
+curl -s -o f.jpg -w '%{http_code} %{size_download}\n' \
+  'http://192.168.1.14:18080/t/033976933/frame.jpg?password=relay1'
+```
+
+TLS: add `--tls-cert/--tls-key` to the relay, `--relay-insecure` (or
+`--relay-ca`) to the host, use `https://…` and `curl -k` for a self-signed
+certificate. The viewer must be opened at the **trailing-slash** URL.
+
+### 4.2d Android parity (clipboard and files)
+
+```sh
+adb forward tcp:18088 tcp:8088
+PW=552436
+curl -s "http://127.0.0.1:18088/clipboard?password=$PW"          # GET
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"text":"hello"}' "http://127.0.0.1:18088/clipboard?password=$PW"
+curl -s "http://127.0.0.1:18088/files?password=$PW"
+curl -s -F "file=@/tmp/parity.txt;filename=parity.txt" \
+  "http://127.0.0.1:18088/upload?password=$PW&name=parity.txt"
+curl -s -o out.txt "http://127.0.0.1:18088/download?password=$PW&name=parity.txt"
+```
+
 ### 4.6 Evaluation criteria
 
 | Area | Pass condition |
@@ -197,6 +229,9 @@ changed value.
 | UI consistency | Same palette, radii, typography, logo and component shapes on HTML, Tk and Android |
 | Scaling | Auto fit and every fixed scale render the full host frame; input stays aligned after scrolling |
 | Orientation | Android guest survives rotation without losing the session; browser reflows |
+| Host display picker | `/displays` lists monitors and `POST /display` switches them |
+| WAN relay | `/resolve` returns a relay URL; `/t/<id>/*` streams and accepts input |
+| Android parity | Clipboard GET/POST and file upload/list/download round-trip |
 | Security | No unauthenticated frame/input access; `/quit` requires the password; scans are clean |
 
 ---
@@ -280,6 +315,18 @@ pytest                  72 passed
 gosec (medium+)         pass
 govulncheck             no reachable vulnerabilities
 shellcheck              pass
+```
+
+### 6.3b Relay and Android parity (this pass)
+
+```
+resolve → relay:true, url .../t/033976933/
+/t/033976933/ui            200
+/t/033976933/frame.jpg     200 26,603 bytes
+TLS variant (self-signed)  200 26,782 bytes
+Android guest through relay 1280×800 · 11 fps
+Android host clipboard     POST 204 → GET returns the text
+Android host files         upload 204 → ["parity.txt"] → download 200, MATCH
 ```
 
 ### 6.4 Input-injection proof (Android)

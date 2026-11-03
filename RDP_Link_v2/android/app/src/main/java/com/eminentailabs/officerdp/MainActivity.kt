@@ -16,11 +16,17 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.SecureRandom
+import kotlin.concurrent.thread
+import org.json.JSONObject
 
 class MainActivity : Activity() {
     private val REQUEST_CODE = 1001
@@ -31,6 +37,10 @@ class MainActivity : Activity() {
     private lateinit var portView: EditText
     private lateinit var rendezvousView: EditText
     private lateinit var statusView: TextView
+    private lateinit var urlView: EditText
+    private lateinit var recentView: ListView
+    private lateinit var advancedPanel: View
+    private lateinit var advancedToggle: TextView
 
     private val prefs by lazy { getSharedPreferences("officerdp", Context.MODE_PRIVATE) }
 
@@ -53,6 +63,10 @@ class MainActivity : Activity() {
         portView = findViewById(R.id.port)
         rendezvousView = findViewById(R.id.rendezvous)
         statusView = findViewById(R.id.status)
+        urlView = findViewById(R.id.url)
+        recentView = findViewById(R.id.recentList)
+        advancedPanel = findViewById(R.id.advancedPanel)
+        advancedToggle = findViewById(R.id.advancedToggle)
         statusView.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             toast("Enable RDP Link remote control")
@@ -88,19 +102,134 @@ class MainActivity : Activity() {
             toast("Enable RDP Link remote control")
         }
 
-        val url = findViewById<EditText>(R.id.url)
+        advancedToggle.setOnClickListener {
+            val open = advancedPanel.visibility != View.VISIBLE
+            advancedPanel.visibility = if (open) View.VISIBLE else View.GONE
+            advancedToggle.text = if (open) "Advanced settings ▴" else "Advanced settings ▾"
+        }
+
         findViewById<Button>(R.id.go).setOnClickListener {
-            var target = url.text.toString().trim()
-            if (target.isEmpty()) target = "http://127.0.0.1:${portView.text}/"
-            if (!target.startsWith("http")) target = "http://$target"
-            startActivity(
-                Intent(this, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_URL, target)
-            )
+            openViewer(urlView.text.toString().trim())
+        }
+
+        recentView.setOnItemClickListener { _, _, position, _ ->
+            val target = recentItems().getOrNull(position) ?: return@setOnItemClickListener
+            urlView.setText(target)
+            openViewer(target)
+        }
+        recentView.setOnItemLongClickListener { _, _, position, _ ->
+            val items = recentItems().toMutableList()
+            if (position in items.indices) {
+                val removed = items.removeAt(position)
+                saveRecent(items)
+                refreshRecent()
+                toast("Removed $removed")
+            }
+            true
+        }
+        refreshRecent()
+
+        intent?.getStringExtra("rendezvous")?.let { relay ->
+            rendezvousView.setText(relay)
+            saveSettings()
+        }
+
+        // Test/deployment helper: adb ... --es seed "host1:8088,host2:8088"
+        intent?.getStringExtra("seed")?.let { seed ->
+            val items = recentItems().toMutableList()
+            seed.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { entry ->
+                items.remove(entry)
+                items.add(0, entry)
+            }
+            saveRecent(items)
+            refreshRecent()
         }
 
         if (prefs.getString("password", "").isNullOrEmpty()) {
             passwordView.setText(randomPassword())
             saveSettings()
+        }
+    }
+
+    // -- recents -------------------------------------------------------------
+    private fun recentItems(): List<String> =
+        prefs.getString("recent", "")
+            ?.split('\n')
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+
+    private fun saveRecent(items: List<String>) {
+        prefs.edit().putString("recent", items.take(8).joinToString("\n")).apply()
+    }
+
+    private fun remember(target: String) {
+        val items = recentItems().toMutableList()
+        items.remove(target)
+        items.add(0, target)
+        saveRecent(items)
+        refreshRecent()
+    }
+
+    private fun refreshRecent() {
+        val adapter = ArrayAdapter(
+            this, android.R.layout.simple_list_item_1, recentItems()
+        )
+        recentView.adapter = adapter
+    }
+
+    private fun openViewer(raw: String) {
+        if (raw.isBlank()) {
+            toast("Enter an address or RDP Link ID")
+            return
+        }
+        var target = raw
+        if (!target.startsWith("http")) {
+            val digits = target.replace(" ", "")
+            if (digits.length == 9 && digits.all { it.isDigit() }) {
+                resolvePeer(digits)
+                return
+            }
+            target = "http://$target"
+        }
+        remember(target)
+        startActivity(
+            Intent(this, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_URL, target)
+        )
+    }
+
+    /** Resolve a 9-digit ID through the configured rendezvous/relay. */
+    private fun resolvePeer(digits: String) {
+        val base = rendezvousView.text.toString().trim().trimEnd('/')
+        if (base.isEmpty()) {
+            toast("Set a rendezvous URL in Advanced settings")
+            return
+        }
+        toast("Resolving $digits…")
+        thread {
+            val resolved = try {
+                val url = URL("$base/resolve?peerId=$digits")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 6000
+                conn.readTimeout = 6000
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(body)
+                json.optString("url").ifEmpty { json.optString("addr") }
+            } catch (_: Exception) {
+                ""
+            }
+            runOnUiThread {
+                if (resolved.isEmpty()) {
+                    toast("Could not resolve $digits")
+                } else {
+                    var target = resolved
+                    if (!target.startsWith("http")) target = "http://$target"
+                    remember(target)
+                    startActivity(
+                        Intent(this, ViewerActivity::class.java)
+                            .putExtra(ViewerActivity.EXTRA_URL, target)
+                    )
+                }
+            }
         }
     }
 

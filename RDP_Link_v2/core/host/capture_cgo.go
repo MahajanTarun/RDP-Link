@@ -16,11 +16,11 @@ import (
 )
 
 type screenshotSource struct {
-	display int
-	closed  chan struct{}
+	agent  *Agent
+	closed chan struct{}
 }
 
-func (s *screenshotSource) ID() string { return fmt.Sprint(s.display) }
+func (s *screenshotSource) ID() string { return fmt.Sprint(s.agent.CurrentDisplay()) }
 func (s *screenshotSource) Close() error {
 	if s.closed != nil {
 		close(s.closed)
@@ -29,8 +29,17 @@ func (s *screenshotSource) Close() error {
 	return nil
 }
 func (s *screenshotSource) Read() (img image.Image, release func(), err error) {
-	img, err = screenshot.CaptureDisplay(s.display)
+	img, err = screenshot.CaptureDisplay(s.agent.CurrentDisplay())
 	return img, func() {}, err
+}
+
+// displayCount reports how many monitors can be captured.
+func displayCount() int { return screenshot.NumActiveDisplays() }
+
+// displaySize returns a monitor's pixel dimensions.
+func displaySize(i int) (int, int) {
+	b := screenshot.GetDisplayBounds(i)
+	return b.Dx(), b.Dy()
 }
 
 // StartCapture starts two pipelines:
@@ -42,21 +51,22 @@ func (s *screenshotSource) Read() (img image.Image, release func(), err error) {
 // The HTTP loop does not depend on the WebRTC encoder, so screen sharing keeps
 // working even when the H.264 encoder cannot be initialised.
 func (a *Agent) StartCapture(display int) error {
-	go a.httpFrameLoop(display)
+	a.SetDisplay(display)
+	go a.httpFrameLoop()
 
 	params, err := openh264.NewParams()
 	if err != nil {
 		return err
 	}
 	selector := mediadevices.NewCodecSelector(mediadevices.WithVideoEncoders(&params))
-	source := &screenshotSource{display: display, closed: make(chan struct{})}
+	source := &screenshotSource{agent: a, closed: make(chan struct{})}
 	track := mediadevices.NewVideoTrack(source, selector).(*mediadevices.VideoTrack)
 	a.vt = track
 	return nil
 }
 
 // httpFrameLoop captures at a steady rate and keeps the latest JPEG frame.
-func (a *Agent) httpFrameLoop(display int) {
+func (a *Agent) httpFrameLoop() {
 	ticker := time.NewTicker(90 * time.Millisecond)
 	defer ticker.Stop()
 	var lastErr string
@@ -66,7 +76,7 @@ func (a *Agent) httpFrameLoop(display int) {
 		if a.TestPattern {
 			frame = testPatternFrame(time.Now())
 		} else {
-			frame, err = screenshot.CaptureDisplay(display)
+			frame, err = screenshot.CaptureDisplay(a.CurrentDisplay())
 		}
 		if err != nil {
 			if err.Error() != lastErr {

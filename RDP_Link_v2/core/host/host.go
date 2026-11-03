@@ -38,9 +38,12 @@ type Agent struct {
 	// It exists so the host stack can be validated in environments where GDI
 	// or X11 capture is unavailable (CI, Wine, headless runners).
 	TestPattern bool
-	LANIP       string
-	WANIP       string
-	Port        int
+	// Display is the monitor index being captured. It can be changed while
+	// the agent is running through POST /display.
+	Display int
+	LANIP   string
+	WANIP   string
+	Port    int
 
 	mu        sync.Mutex
 	raw       *image.RGBA
@@ -64,6 +67,8 @@ type Agent struct {
 
 	done     chan struct{}
 	stopOnce sync.Once
+
+	dispMu sync.RWMutex
 
 	muPeers sync.Mutex
 	peers   map[string]*transport.Peer
@@ -127,6 +132,24 @@ func (a *Agent) FramePNG() ([]byte, uint64) {
 // FrameJPEG returns the latest JPEG frame and a content hash. The hash only
 // changes when the captured pixels change, so a viewer polling a static screen
 // receives 304 Not Modified instead of re-downloading identical bytes.
+// SetDisplay switches the captured monitor. Out-of-range indexes are ignored.
+func (a *Agent) SetDisplay(index int) bool {
+	if index < 0 || index >= displayCount() {
+		return false
+	}
+	a.dispMu.Lock()
+	a.Display = index
+	a.dispMu.Unlock()
+	return true
+}
+
+// CurrentDisplay returns the monitor index currently captured.
+func (a *Agent) CurrentDisplay() int {
+	a.dispMu.RLock()
+	defer a.dispMu.RUnlock()
+	return a.Display
+}
+
 func (a *Agent) FrameJPEG() ([]byte, string, uint64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -170,6 +193,46 @@ func (a *Agent) Serve() error {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return false
 	}
+	mux.HandleFunc("/displays", func(w http.ResponseWriter, r *http.Request) {
+		type display struct {
+			Index   int  `json:"index"`
+			Width   int  `json:"width"`
+			Height  int  `json:"height"`
+			Primary bool `json:"primary"`
+		}
+		count := displayCount()
+		list := make([]display, 0, count)
+		for i := 0; i < count; i++ {
+			w, h := displaySize(i)
+			list = append(list, display{Index: i, Width: w, Height: h, Primary: i == 0})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"count": count, "active": a.CurrentDisplay(), "displays": list,
+		})
+	})
+	mux.HandleFunc("/display", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(w, r) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Index int `json:"index"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if !a.SetDisplay(body.Index) {
+			http.Error(w, "no such display", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	mux.HandleFunc("/frame.png", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(w, r) {
 			return

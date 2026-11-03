@@ -84,14 +84,18 @@ func TestPairing(t *testing.T) {
 	resp.Body.Close()
 	vbody := `{"from":"a","to":"b","code":"123456"}`
 	vresp, err := http.Post(ts.URL+"/pair/verify", "application/json", strings.NewReader(vbody))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer vresp.Body.Close()
 	if vresp.StatusCode != 200 {
 		t.Fatalf("verify status %d", vresp.StatusCode)
 	}
 	// second verify should fail
 	vresp2, err := http.Post(ts.URL+"/pair/verify", "application/json", strings.NewReader(vbody))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer vresp2.Body.Close()
 	if vresp2.StatusCode == 200 {
 		t.Fatal("expected failure on reuse")

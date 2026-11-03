@@ -117,7 +117,7 @@
 </head>
 <body>
 <header>
-  <div class="brand"><img class="mark" src="/logo.png" alt="" />RDP <span>Link</span></div>
+  <div class="brand"><img class="mark" src="logo.png" alt="" />RDP <span>Link</span></div>
   <div id="state" class="pill">Sharing</div>
   <div style="flex:1"></div>
   <button id="openViewer">Open viewer</button>
@@ -192,7 +192,7 @@
 
   async function load() {
     try {
-      const res = await fetch('/info', { cache: 'no-store' });
+      const res = await fetch('info', { cache: 'no-store' });
       info = await res.json();
       $('peerId').textContent = info.peerId || '—';
       $('lan').textContent = info.lanIp ? `${info.lanIp}:${info.port}` : '—';
@@ -229,7 +229,8 @@
   });
 
   $('openViewer').addEventListener('click', () => {
-    const url = location.origin + '/' + (password ? '#pw=' + encodeURIComponent(password) : '');
+    const url = new URL('.', location.href).href +
+      (password ? '#pw=' + encodeURIComponent(password) : '');
     window.open(url, '_blank', 'noopener');
   });
 
@@ -256,7 +257,7 @@
   $('stop').addEventListener('click', async () => {
     if (!confirm('Stop sharing this screen?')) return;
     try {
-      await fetch('/quit', {
+      await fetch('quit', {
         method: 'POST',
         headers: { 'X-Office-Password': password }
       });

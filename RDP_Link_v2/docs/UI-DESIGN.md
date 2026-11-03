@@ -107,8 +107,9 @@ horizontal padding. Semantic colour maps to state:
 
 ### Scale selector
 
-Both the browser and Tk viewers expose the same six values: **Auto fit**,
-50 %, 75 %, 100 %, 125 %, 150 %. The control is a 32 px Ant Design select
+Both viewers expose **Fit**, **Fill**, **1:1**, 50 %, 75 %, 125 % and 150 %.
+Fit scales up as well as down; Fill covers the stage and crops; fixed values
+pin the frame to `host resolution × scale`. The control is a 32 px Ant Design select
 (white fill, `#D9D9D9` border, 6 px radius). Auto fit recalculates on resize
 and orientation change; any fixed value pins the frame to
 `host resolution × scale` and makes the stage scroll (browser `overflow:auto`,
@@ -195,5 +196,12 @@ Windows/Wine.
   `configChanges` for orientation/screen size (the WebView keeps its session),
   and the browser viewer reflows on `orientationchange`. Desktop windows simply
   re-render on resize.
-- **Display scaling** is a first-class control: auto fit by default, with
-  fixed 50–150 % steps and scrolling when the scaled host exceeds the stage.
+- **Display scaling** is a first-class control: Fit by default, with Fill,
+  1:1 and 50–150 % steps and scrolling when the scaled host exceeds the stage.
+- A **host display picker** appears when the host has more than one monitor;
+  the Tk viewer also offers **Match window** to size the window to the host
+  aspect ratio.
+- **Android layout:** a white header, two cards, a collapsed Advanced panel and
+  a sticky bottom action bar (Stop / Start sharing / Connect). Recent devices
+  are a tappable list; long-press removes an entry. Landscape uses a
+  two-column layout (`layout-land`) with the same components.

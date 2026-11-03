@@ -9,6 +9,7 @@ import json
 import os
 import random
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -376,10 +377,34 @@ class OfficePanel(ttk.Frame):
             messagebox.showerror("RDP Link", f"Could not resolve peer: {exc}")
             return None
         addr = info.get("addr") or info.get("lanIp") or ""
-        if not addr:
-            messagebox.showerror("RDP Link", "Rendezvous returned no address for this peer.")
-            return None
-        return addr
+        relay = info.get("url") or ""
+
+        def reachable(value):
+            if not value:
+                return False
+            host, _, port = value.partition(":")
+            try:
+                port = int(port or 80)
+            except ValueError:
+                return False
+            if host in ("", "0.0.0.0"):
+                return False
+            try:
+                with socket.create_connection((host, port), timeout=0.6):
+                    return True
+            except OSError:
+                return False
+
+        # Same LAN is always faster; fall back to the relay for WAN and
+        # changing public IPs.
+        if reachable(addr):
+            return addr
+        if relay:
+            return relay
+        if addr:
+            return addr
+        messagebox.showerror("RDP Link", "Rendezvous returned no address for this peer.")
+        return None
 
     def _open_viewer(self, address, password):
         try:

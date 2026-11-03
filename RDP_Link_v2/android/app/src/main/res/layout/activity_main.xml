@@ -5,7 +5,7 @@
     android:layout_height="match_parent"
     android:background="@color/antd_bg_layout">
 
-    <!-- Layout.Header: white bar, hairline divider -->
+    <!-- Layout.Header -->
     <LinearLayout
         android:orientation="vertical"
         android:layout_width="match_parent"
@@ -13,8 +13,8 @@
         android:background="@color/antd_bg_container"
         android:paddingLeft="24dp"
         android:paddingRight="24dp"
-        android:paddingTop="18dp"
-        android:paddingBottom="18dp">
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp">
 
         <LinearLayout
             android:orientation="horizontal"
@@ -38,7 +38,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="RDP Link"
+                    android:text="@string/app_name"
                     android:textColor="@color/antd_text"
                     android:textSize="20sp"
                     android:textStyle="bold" />
@@ -52,30 +52,36 @@
             </LinearLayout>
         </LinearLayout>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:text="RDP Link ID"
-            android:textColor="@color/antd_text_secondary"
-            android:textSize="14sp" />
-
         <LinearLayout
             android:orientation="horizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
             android:gravity="center_vertical">
 
-            <TextView
-                android:id="@+id/peerId"
+            <LinearLayout
+                android:orientation="vertical"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="— — —"
-                android:textColor="@color/antd_text"
-                android:textSize="28sp"
-                android:fontFamily="monospace"
-                android:textStyle="bold" />
+                android:layout_weight="1">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="RDP Link ID"
+                    android:textColor="@color/antd_text_secondary"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/peerId"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="— — —"
+                    android:textColor="@color/antd_text"
+                    android:textSize="26sp"
+                    android:fontFamily="monospace"
+                    android:textStyle="bold" />
+            </LinearLayout>
 
             <Button
                 android:id="@+id/copyId"
@@ -103,6 +109,7 @@
             android:layout_height="wrap_content"
             android:padding="16dp">
 
+            <!-- Share card -->
             <LinearLayout
                 android:orientation="vertical"
                 android:layout_width="match_parent"
@@ -118,10 +125,18 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Start sharing from the bar below, then approve the screen capture prompt."
+                    android:textColor="@color/antd_text_secondary"
+                    android:textSize="12sp" />
+
+                <TextView
                     style="@style/OfficeLabel"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="18dp"
+                    android:layout_marginTop="16dp"
                     android:text="Access password" />
 
                 <LinearLayout
@@ -150,58 +165,53 @@
                 </LinearLayout>
 
                 <TextView
-                    style="@style/OfficeLabel"
+                    android:id="@+id/advancedToggle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:text="Listening port" />
-
-                <EditText
-                    android:id="@+id/port"
-                    style="@style/OfficeInput"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:inputType="number"
-                    android:text="8088" />
-
-                <TextView
-                    style="@style/OfficeLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:text="Rendezvous URL (optional, for WAN)" />
-
-                <EditText
-                    android:id="@+id/rendezvous"
-                    style="@style/OfficeInput"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:hint="https://rendezvous.example.com" />
+                    android:layout_marginTop="16dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="Advanced settings ▾"
+                    android:textColor="@color/antd_primary"
+                    android:textSize="13sp" />
 
                 <LinearLayout
-                    android:orientation="horizontal"
+                    android:id="@+id/advancedPanel"
+                    android:orientation="vertical"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="18dp">
+                    android:visibility="gone">
 
-                    <Button
-                        android:id="@+id/startHost"
-                        style="@style/OfficeButtonPrimary"
-                        android:layout_width="0dp"
+                    <TextView
+                        style="@style/OfficeLabel"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Start sharing" />
+                        android:layout_marginTop="10dp"
+                        android:text="Listening port" />
 
-                    <Button
-                        android:id="@+id/stopHost"
-                        style="@style/OfficeButton"
-                        android:layout_width="0dp"
+                    <EditText
+                        android:id="@+id/port"
+                        style="@style/OfficeInput"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="8dp"
-                        android:text="Stop" />
+                        android:layout_marginTop="6dp"
+                        android:inputType="number"
+                        android:text="8088" />
+
+                    <TextView
+                        style="@style/OfficeLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="Rendezvous URL (WAN relay)" />
+
+                    <EditText
+                        android:id="@+id/rendezvous"
+                        style="@style/OfficeInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:hint="https://relay.example.com" />
                 </LinearLayout>
 
                 <Button
@@ -209,7 +219,7 @@
                     style="@style/OfficeButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="14dp"
                     android:text="Enable remote control (accessibility)" />
 
                 <TextView
@@ -227,6 +237,7 @@
                     android:text="Idle" />
             </LinearLayout>
 
+            <!-- Connect card -->
             <LinearLayout
                 android:orientation="vertical"
                 android:layout_width="match_parent"
@@ -246,32 +257,83 @@
                     style="@style/OfficeLabel"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:text="Address, or 9-digit RDP Link ID" />
+                    android:layout_marginTop="14dp"
+                    android:text="Address, RDP Link ID, or relay URL" />
 
-                <LinearLayout
-                    android:orientation="horizontal"
+                <EditText
+                    android:id="@+id/url"
+                    style="@style/OfficeInput"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp">
+                    android:layout_marginTop="6dp"
+                    android:hint="192.168.1.20:8088 or 123 456 789" />
 
-                    <EditText
-                        android:id="@+id/url"
-                        style="@style/OfficeInput"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:hint="http://host:8088/ or 123 456 789" />
+                <TextView
+                    style="@style/OfficeLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Recent devices" />
 
-                    <Button
-                        android:id="@+id/go"
-                        style="@style/OfficeButtonPrimary"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:text="Connect" />
-                </LinearLayout>
+                <ListView
+                    android:id="@+id/recentList"
+                    android:layout_width="match_parent"
+                    android:layout_height="140dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_input"
+                    android:divider="@color/antd_border_secondary"
+                    android:dividerHeight="1dp"
+                    android:padding="4dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Long-press a recent device to remove it."
+                    android:textColor="@color/antd_text_tertiary"
+                    android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
+
+    <!-- Sticky action bar -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/antd_border_secondary" />
+
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/antd_bg_container"
+        android:padding="12dp"
+        android:gravity="center_vertical">
+
+        <Button
+            android:id="@+id/stopHost"
+            style="@style/OfficeButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Stop" />
+
+        <Button
+            android:id="@+id/startHost"
+            style="@style/OfficeButtonPrimary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1.4"
+            android:layout_marginStart="8dp"
+            android:text="Start sharing" />
+
+        <Button
+            android:id="@+id/go"
+            style="@style/OfficeButtonPrimary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1.4"
+            android:layout_marginStart="8dp"
+            android:text="Connect" />
+    </LinearLayout>
 </LinearLayout>
