@@ -46,9 +46,13 @@ type Agent struct {
 	CameraDevice string
 	SerialPath   string
 	Forwards     map[int]bool
-	LANIP        string
-	WANIP        string
-	Port         int
+	// VirtualCamera is a v4l2loopback device (Linux) fed by guest camera frames.
+	VirtualCamera string
+	// USBIP enables USB/IP export controls.
+	USBIP bool
+	LANIP string
+	WANIP string
+	Port  int
 
 	mu        sync.Mutex
 	raw       *image.RGBA
@@ -77,6 +81,11 @@ type Agent struct {
 
 	muPeers sync.Mutex
 	peers   map[string]*transport.Peer
+
+	guestCamMu  sync.Mutex
+	guestCamJPG []byte
+	guestCamSeq uint64
+	guestCamAt  time.Time
 
 	failMu sync.Mutex
 	fails  map[string]*failEntry
@@ -424,6 +433,10 @@ func (a *Agent) Serve() error {
 	mux.HandleFunc("/audio", a.handleAudio)
 	mux.HandleFunc("/mic", a.handleMicWS)
 	mux.HandleFunc("/camera.mjpg", a.handleCamera)
+	mux.HandleFunc("/camera/in", a.handleGuestCameraWS)
+	mux.HandleFunc("/usb/list", a.handleUSBList)
+	mux.HandleFunc("/usb/bind", a.handleUSBBind)
+	mux.HandleFunc("/usb/unbind", a.handleUSBUnbind)
 	mux.HandleFunc("/serial", a.handleSerialWS)
 	mux.HandleFunc("/port/", a.handlePortProxy)
 

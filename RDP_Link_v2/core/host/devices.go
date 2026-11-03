@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,12 +31,14 @@ var upgrader = websocket.Upgrader{
 // file-transfer API instead; see docs/DEVICES.md.
 
 type deviceCaps struct {
-	Audio  bool     `json:"audio"`
-	Mic    bool     `json:"mic"`
-	Camera bool     `json:"camera"`
-	Serial string   `json:"serial,omitempty"`
-	Ports  []int    `json:"ports"`
-	Tools  []string `json:"tools"`
+	Audio         bool     `json:"audio"`
+	Mic           bool     `json:"mic"`
+	Camera        bool     `json:"camera"`
+	Serial        string   `json:"serial,omitempty"`
+	Ports         []int    `json:"ports"`
+	Tools         []string `json:"tools"`
+	VirtualCamera string   `json:"virtualCamera,omitempty"`
+	USBIP         bool     `json:"usbip"`
 }
 
 var audioSem = make(chan struct{}, 2)
@@ -109,12 +113,14 @@ func (a *Agent) defaultAudioInput() string {
 
 func (a *Agent) capabilities() deviceCaps {
 	caps := deviceCaps{
-		Audio:  haveTool("ffmpeg"),
-		Mic:    haveTool("ffplay") || haveTool("ffmpeg"),
-		Camera: haveTool("ffmpeg"),
-		Serial: a.SerialPath,
-		Tools:  []string{},
-		Ports:  []int{},
+		Audio:         haveTool("ffmpeg"),
+		Mic:           haveTool("ffplay") || haveTool("ffmpeg"),
+		Camera:        haveTool("ffmpeg"),
+		Serial:        a.SerialPath,
+		Tools:         []string{},
+		Ports:         []int{},
+		VirtualCamera: a.VirtualCamera,
+		USBIP:         a.USBIP,
 	}
 	if haveTool("ffmpeg") {
 		caps.Tools = append(caps.Tools, "ffmpeg")
@@ -382,4 +388,206 @@ func (a *Agent) handlePortProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+// ---- guest camera -> host virtual camera (v4l2loopback) -------------------
+
+func (a *Agent) handleGuestCameraWS(w http.ResponseWriter, r *http.Request) {
+	if !a.auth(w, r) {
+		return
+	}
+	if a.VirtualCamera == "" {
+		http.Error(w, "virtual camera not configured", http.StatusServiceUnavailable)
+		return
+	}
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer ws.Close()
+	for {
+		_, data, err := ws.ReadMessage()
+		if err != nil {
+			return
+		}
+		if len(data) < 2 || len(data) > 8<<20 {
+			continue
+		}
+		a.guestCamMu.Lock()
+		a.guestCamJPG = append(a.guestCamJPG[:0], data...)
+		a.guestCamSeq++
+		a.guestCamAt = time.Now()
+		a.guestCamMu.Unlock()
+	}
+}
+
+// PublishVirtualCamera feeds guest frames (or the host screen until a guest
+// connects) into a v4l2loopback device so host applications see a camera.
+func (a *Agent) PublishVirtualCamera() {
+	if a.VirtualCamera == "" {
+		return
+	}
+	go func() {
+		for {
+			select {
+			case <-a.done:
+				return
+			default:
+			}
+			// #nosec G204 -- ffmpeg with a fixed argument list; the device
+			// path comes from the operator's --virtual-camera flag.
+			cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
+				"-f", "mjpeg", "-i", "pipe:0",
+				"-vf", "scale=640:480", "-r", "15", "-pix_fmt", "yuv420p",
+				"-f", "v4l2", a.VirtualCamera)
+			stdin, err := cmd.StdinPipe()
+			if err != nil {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			if err := cmd.Start(); err != nil {
+				log.Printf("virtual camera: %v", err)
+				time.Sleep(3 * time.Second)
+				continue
+			}
+			for {
+				select {
+				case <-a.done:
+					_ = cmd.Process.Kill()
+					_ = cmd.Wait()
+					return
+				default:
+				}
+				a.guestCamMu.Lock()
+				frame := append([]byte(nil), a.guestCamJPG...)
+				fresh := time.Since(a.guestCamAt) < 5*time.Second
+				a.guestCamMu.Unlock()
+				// Guest camera wins while it is streaming; otherwise show the
+				// host screen so the device always has a signal.
+				if len(frame) == 0 || !fresh {
+					a.mu.Lock()
+					frame = append([]byte(nil), a.frameJPG...)
+					a.mu.Unlock()
+				}
+				if len(frame) > 0 {
+					if _, err := stdin.Write(frame); err != nil {
+						break
+					}
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			time.Sleep(time.Second)
+		}
+	}()
+}
+
+// ---- USB/IP export (Linux) ------------------------------------------------
+
+type usbDevice struct {
+	BusID    string `json:"busid"`
+	VendorID string `json:"vendorId,omitempty"`
+	Product  string `json:"product"`
+}
+
+func parseUSBIPList(out string) []usbDevice {
+	devices := []usbDevice{}
+	var current *usbDevice
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "- busid ") {
+			fields := strings.Fields(trimmed) // ["-", "busid", "3-10", "(vid:pid)"]
+			if len(fields) >= 3 {
+				dev := usbDevice{BusID: fields[2]}
+				if len(fields) > 3 {
+					dev.VendorID = strings.Trim(fields[3], "()")
+				}
+				devices = append(devices, dev)
+				current = &devices[len(devices)-1]
+			}
+			continue
+		}
+		if current != nil && trimmed != "" && !strings.HasPrefix(trimmed, "-") {
+			if current.Product == "" {
+				parts := strings.SplitN(trimmed, "(", 2)
+				current.Product = strings.TrimSpace(parts[0])
+			}
+		}
+	}
+	return devices
+}
+
+func (a *Agent) handleUSBList(w http.ResponseWriter, r *http.Request) {
+	if !a.auth(w, r) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if !a.USBIP {
+		_ = json.NewEncoder(w).Encode(map[string]any{"enabled": false, "devices": []usbDevice{}})
+		return
+	}
+	out, err := exec.Command("usbip", "list", "-l").Output()
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"enabled": true, "error": "usbip unavailable", "devices": []usbDevice{}})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"enabled": true, "devices": parseUSBIPList(string(out)),
+	})
+}
+
+func (a *Agent) usbAction(w http.ResponseWriter, r *http.Request, action string) {
+	if !a.auth(w, r) {
+		return
+	}
+	if !a.USBIP {
+		http.Error(w, "usbip disabled", http.StatusForbidden)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		BusID string `json:"busid"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if ok, _ := regexp.MatchString(`^[0-9]+-[0-9]+(\.[0-9]+)*$`, body.BusID); !ok {
+		http.Error(w, "invalid bus id", http.StatusBadRequest)
+		return
+	}
+	if action == "bind" {
+		// The host controller module may not be loaded yet; harmless if it is.
+		_ = exec.Command("modprobe", "usbip-host").Run()
+	}
+	// #nosec G204 -- action is bind/unbind from the two callers and busid is
+	// validated as digits-dash above.
+	cmd := exec.Command("usbip", action, "-b", body.BusID)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		status := http.StatusBadGateway
+		if strings.Contains(strings.ToLower(msg), "permission") ||
+			strings.Contains(strings.ToLower(msg), "root") ||
+			strings.Contains(strings.ToLower(msg), "must be run as") {
+			status = http.StatusForbidden
+			msg = "usbip needs root on the host: " + msg
+		}
+		http.Error(w, msg, status)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *Agent) handleUSBBind(w http.ResponseWriter, r *http.Request) {
+	a.usbAction(w, r, "bind")
+}
+
+func (a *Agent) handleUSBUnbind(w http.ResponseWriter, r *http.Request) {
+	a.usbAction(w, r, "unbind")
 }

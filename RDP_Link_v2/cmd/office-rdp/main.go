@@ -75,6 +75,8 @@ func main() {
 	cameraDevice := flag.String("camera-device", "", "camera device for MJPEG (default 0 / /dev/video0)")
 	serialPath := flag.String("serial", "", "serial device (or tcp:host:port) to expose to guests")
 	forwardList := flag.String("forward", "", "comma-separated host TCP ports guests may reach")
+	virtualCamera := flag.String("virtual-camera", "", "v4l2loopback device fed by guest camera frames (Linux)")
+	enableUSBIP := flag.Bool("usbip", false, "enable USB/IP export controls (Linux)")
 	testPattern := flag.Bool("test-pattern", false, "stream a synthetic test pattern instead of the screen")
 	flag.Parse()
 
@@ -114,6 +116,8 @@ func main() {
 		ag.AudioInput = *audioInput
 		ag.CameraDevice = *cameraDevice
 		ag.SerialPath = *serialPath
+		ag.VirtualCamera = *virtualCamera
+		ag.USBIP = *enableUSBIP
 		for _, item := range strings.Split(*forwardList, ",") {
 			if n, err := strconv.Atoi(strings.TrimSpace(item)); err == nil && n > 0 && n < 65536 {
 				ag.Forwards[n] = true
@@ -122,6 +126,7 @@ func main() {
 		if err := ag.StartCapture(*display); err != nil {
 			fmt.Fprintln(os.Stderr, "capture:", err)
 		}
+		ag.PublishVirtualCamera()
 		ag.StartClipboardSync()
 		if *record != "" {
 			if err := ag.StartRecording(*record); err != nil {

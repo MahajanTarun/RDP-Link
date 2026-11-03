@@ -262,6 +262,12 @@
         <button id="cameraStop">Stop</button>
       </div>
       <p class="muted" id="cameraState">Stopped</p>
+      <h3 style="margin-top:14px">This device's camera → host</h3>
+      <div class="row">
+        <button id="shareCamStart">Share</button>
+        <button id="shareCamStop">Stop</button>
+      </div>
+      <p class="muted" id="shareCamState">Stopped. Needs a virtual camera on the host.</p>
     </section>
 
     <section id="secSerial" hidden>
@@ -275,6 +281,14 @@
       <div class="row" style="margin-top:8px">
         <input id="serialIn" placeholder="type and press Enter" />
       </div>
+    </section>
+
+    <section id="secUsb" hidden>
+      <h3>USB devices (host)</h3>
+      <div id="usbList" class="muted">Loading…</div>
+      <p class="muted">Bind exports a host USB device over USB/IP. The guest
+        attaches it with usbip (Linux), usbip-win2 (Windows) or VirtualHere
+        (macOS). Binding detaches it from the host until you unbind.</p>
     </section>
 
     <section id="secPorts" hidden>
@@ -676,7 +690,7 @@
   $('btnDevices').addEventListener('click', () => {
     const panel = $('devices');
     panel.classList.toggle('open');
-    if (panel.classList.contains('open')) loadCaps();
+    if (panel.classList.contains('open')) { loadCaps(); refreshUSB(); }
   });
   $('devClose').addEventListener('click', () => $('devices').classList.remove('open'));
 
@@ -751,6 +765,91 @@
     serialWS?.close();
     serialWS = null;
   });
+  // -- USB/IP --------------------------------------------------------------
+  async function refreshUSB() {
+    try {
+      const res = await fetch(withPw('usb/list'), { headers: authHeaders(), cache: 'no-store' });
+      if (!res.ok) throw new Error('usb list ' + res.status);
+      const data = await res.json();
+      $('secUsb').hidden = !data.enabled;
+      const list = $('usbList');
+      list.innerHTML = '';
+      if (!data.devices || !data.devices.length) {
+        list.textContent = 'No exportable USB devices.';
+        return;
+      }
+      data.devices.forEach((dev) => {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.alignItems = 'center';
+        row.style.margin = '4px 0';
+        const label = document.createElement('span');
+        label.style.flex = '1';
+        label.textContent = (dev.product || 'USB device') + ' · ' + dev.busid;
+        const bind = document.createElement('button');
+        bind.textContent = 'Bind';
+        bind.onclick = () => usbAction('bind', dev.busid);
+        const unbind = document.createElement('button');
+        unbind.textContent = 'Unbind';
+        unbind.onclick = () => usbAction('unbind', dev.busid);
+        row.append(label, bind, unbind);
+        list.appendChild(row);
+      });
+    } catch (e) {
+      $('secUsb').hidden = true;
+    }
+  }
+  async function usbAction(action, busid) {
+    try {
+      const res = await fetch(withPw('usb/' + action), {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ busid })
+      });
+      toast(res.ok ? ('USB ' + action + ': ' + busid) : (await res.text()));
+      refreshUSB();
+    } catch (_) { toast('USB action failed'); }
+  }
+
+  // -- guest camera -> host virtual camera ---------------------------------
+  let shareCamStream = null, shareCamTimer = null, shareCamWS = null;
+  $('shareCamStart').addEventListener('click', async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      $('shareCamState').textContent = 'Camera needs HTTPS or localhost';
+      return;
+    }
+    try {
+      shareCamStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 } });
+      shareCamWS = new WebSocket(wsBase + withPw('camera/in'));
+      const video = document.createElement('video');
+      video.srcObject = shareCamStream;
+      video.muted = true;
+      await video.play();
+      const canvas = document.createElement('canvas');
+      canvas.width = 640; canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+      shareCamTimer = setInterval(() => {
+        if (shareCamWS?.readyState !== WebSocket.OPEN) return;
+        ctx.drawImage(video, 0, 0, 640, 480);
+        canvas.toBlob((blob) => {
+          if (blob && shareCamWS?.readyState === WebSocket.OPEN) blob.arrayBuffer()
+            .then((buf) => shareCamWS.send(buf));
+        }, 'image/jpeg', 0.7);
+      }, 125);
+      $('shareCamState').textContent = 'Sharing this camera to the host';
+    } catch (e) {
+      $('shareCamState').textContent = 'Camera unavailable: ' + e.message;
+    }
+  });
+  function stopShareCam() {
+    clearInterval(shareCamTimer); shareCamTimer = null;
+    shareCamStream?.getTracks().forEach((t) => t.stop()); shareCamStream = null;
+    try { shareCamWS?.close(); } catch (_) {}
+    shareCamWS = null;
+    $('shareCamState').textContent = 'Stopped';
+  }
+  $('shareCamStop').addEventListener('click', stopShareCam);
+
   $('serialIn').addEventListener('keydown', (ev) => {
     if (ev.key !== 'Enter') return;
     ev.preventDefault();

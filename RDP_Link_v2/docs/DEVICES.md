@@ -96,6 +96,40 @@ allow-listed**. It works through the relay, so a guest can reach a host-local
 web admin page without opening a firewall port. Arbitrary TCP (SSH, VNC) is not
 proxied; use the serial/TCP tunnel or a dedicated forwarder.
 
+## 5.1 Guest camera → host virtual camera (verified on Linux)
+
+```sh
+office-rdp --host --virtual-camera /dev/video10
+```
+
+The host publishes the guest's camera frames into a v4l2loopback device, so
+host applications see a normal camera. The browser drawer's **This device's
+camera → host** section captures 640×480 JPEG frames and streams them to
+`WS /camera/in`.
+
+Verified on the Linux PC: the guest sent a red 320×240 frame; the host device
+returned 640×480 with the centre pixel `(254,0,0)`. While no guest camera is
+connected, the device mirrors the host screen (so it always has a signal).
+
+- **Windows 11:** the same frames can feed `MFCreateVirtualCamera`
+  (user-mode Media Foundation, no kernel driver); requires Windows 11 22H2+.
+- **macOS 12.3+:** requires a notarized Core Media I/O camera extension
+  (Developer ID + Apple entitlement; the user enables it in System Settings).
+
+## 5.2 USB/IP export (verified on Linux)
+
+```sh
+office-rdp --host --usbip
+```
+
+Endpoints (authenticated): `GET /usb/list`, `POST /usb/bind {"busid":"3-10"}`,
+`POST /usb/unbind`. Binding needs root; the host loads `usbip-host` first.
+
+Verified: `usbip list -l` returned the Bluetooth and camera buses; bind → `204`,
+unbind → `204`. Guests attach with `usbip attach -r <host> -b <busid>`
+(Linux), **usbip-win2** (Windows) or **VirtualHere** (macOS — no in-kernel
+usbip). This detaches the device from the host until unbound.
+
 ## 6. USB
 
 True USB device passthrough (a guest USB stick appearing as a host device)

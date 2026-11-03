@@ -26,7 +26,7 @@ class ViewerActivity : Activity() {
     }
 
     private lateinit var web: WebView
-    private var pendingAudio: PermissionRequest? = null
+    private var pendingRequest: PermissionRequest? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,18 +61,28 @@ class ViewerActivity : Activity() {
         web.webViewClient = WebViewClient()
         web.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
-                val wantsAudio = request.resources.contains(
-                    PermissionRequest.RESOURCE_AUDIO_CAPTURE
-                )
-                when {
-                    !wantsAudio -> request.deny()
-                    checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                        PackageManager.PERMISSION_GRANTED ->
-                        request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
-                    else -> {
-                        pendingAudio = request
-                        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 42)
-                    }
+                val wanted = request.resources.filter {
+                    it == PermissionRequest.RESOURCE_AUDIO_CAPTURE ||
+                        it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
+                }
+                if (wanted.isEmpty()) {
+                    request.deny()
+                    return
+                }
+                val missing = mutableListOf<String>()
+                if (wanted.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
+                    checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
+                        PackageManager.PERMISSION_GRANTED
+                ) missing += Manifest.permission.RECORD_AUDIO
+                if (wanted.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
+                    checkSelfPermission(Manifest.permission.CAMERA) !=
+                        PackageManager.PERMISSION_GRANTED
+                ) missing += Manifest.permission.CAMERA
+                if (missing.isEmpty()) {
+                    request.grant(wanted.toTypedArray())
+                } else {
+                    pendingRequest = request
+                    requestPermissions(missing.toTypedArray(), 42)
                 }
             }
         }
@@ -112,12 +122,20 @@ class ViewerActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != 42) return
-        val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-        val request = pendingAudio
-        pendingAudio = null
+        val granted = grantResults.isNotEmpty() &&
+            grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        val request = pendingRequest
+        pendingRequest = null
         if (request == null) return
-        if (granted) request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
-        else request.deny()
+        if (granted) {
+            val wanted = request.resources.filter {
+                it == PermissionRequest.RESOURCE_AUDIO_CAPTURE ||
+                    it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
+            }
+            if (wanted.isEmpty()) request.deny() else request.grant(wanted.toTypedArray())
+        } else {
+            request.deny()
+        }
     }
 
     override fun onBackPressed() {
