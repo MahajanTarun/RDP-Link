@@ -90,9 +90,14 @@ WS /mic                  10 KB WebM consumed by the host player
 ```
 
 Guest UI: the browser/Android **Devices** drawer (audio, microphone, camera,
-serial console, port links) and the Tk viewer's **Audio** and **Devices**
-buttons. Verified in the drawer: camera rendered 640×480, serial echoed
-`drawer-serial`, speaker state reached `Playing`.
+serial console, USB list, port links) and the Tk viewer's **Audio** and
+**Devices** buttons. Verified in the drawer: camera rendered 640×480, serial
+echoed `drawer-serial`, speaker state reached `Playing`.
+
+**Camera redirection** (guest → host apps) was verified on the Linux PC:
+`--virtual-camera /dev/video10` published the guest's red 320×240 frame; the
+host device returned 640×480 with centre pixel `(254,0,0)`. **USB/IP export**
+was verified with `/usb/list`, `bind → 204`, `unbind → 204` on the Linux host.
 
 Limitations are explicit: the relay carries audio/camera streams and port
 proxies, but WebSocket endpoints (microphone, serial) are LAN-only; camera is a
