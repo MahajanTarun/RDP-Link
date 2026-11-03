@@ -1,4 +1,4 @@
-// Package transport wraps pion/webrtc for the Office RDP media + data path.
+// Package transport wraps pion/webrtc for the RDP Link media + data path.
 package transport
 
 import (

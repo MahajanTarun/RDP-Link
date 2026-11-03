@@ -1,4 +1,4 @@
-"""Peer storage for Office RDP (peers.json). Mirrors profiles.ProfileStore discipline."""
+"""Peer storage for RDP Link (peers.json). Mirrors profiles.ProfileStore discipline."""
 
 import json
 import os

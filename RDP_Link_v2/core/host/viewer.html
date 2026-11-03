@@ -3,68 +3,181 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Office RDP — Viewer</title>
+<title>RDP Link — Viewer</title>
 <style>
-  :root { color-scheme: dark; }
+  /* Ant Design 5 light palette + Tailwind-style spacing utilities. */
+  :root {
+    color-scheme: light;
+    --primary: #1677ff;
+    --primary-hover: #4096ff;
+    --primary-active: #0958d9;
+    --primary-bg: #e6f4ff;
+    --bg-layout: #f5f5f5;
+    --bg-container: #ffffff;
+    --text: rgba(0, 0, 0, 0.88);
+    --text-secondary: rgba(0, 0, 0, 0.65);
+    --text-tertiary: rgba(0, 0, 0, 0.45);
+    --border: #d9d9d9;
+    --border-secondary: #f0f0f0;
+    --fill-secondary: rgba(0, 0, 0, 0.06);
+    --success: #52c41a;
+    --success-text: #389e0d;
+    --success-bg: #f6ffed;
+    --success-border: #b7eb8f;
+    --warning-text: #d48806;
+    --warning-bg: #fffbe6;
+    --warning-border: #ffe58f;
+    --error: #ff4d4f;
+    --error-text: #cf1322;
+    --error-bg: #fff2f0;
+    --error-border: #ffccc7;
+    --radius: 6px;
+    --radius-lg: 8px;
+    --shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02),
+              0 2px 4px 0 rgba(0, 0, 0, 0.02);
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+            "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #0b1220; color: #e2e8f0;
-               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg-layout); color: var(--text);
+    font-family: var(--font); font-size: 14px; line-height: 1.5715;
+    -webkit-font-smoothing: antialiased;
+  }
   #app { display: flex; flex-direction: column; height: 100%; }
 
-  header { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
-           background: #0f172a; border-bottom: 1px solid #1e293b; flex-wrap: wrap; }
-  header .brand { font-weight: 700; letter-spacing: .2px; }
-  header .brand span { color: #22c55e; }
-  #status { font-size: 12px; color: #94a3b8; margin-left: 4px; }
+  header {
+    display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 56px;
+    background: var(--bg-container); border-bottom: 1px solid var(--border-secondary);
+    flex-wrap: nowrap; flex-shrink: 0; min-width: 0;
+  }
+  header > * { flex-shrink: 0; }
+  header #status { flex-shrink: 1; min-width: 0; overflow: hidden;
+                   text-overflow: ellipsis; }
+  header .brand { display: flex; align-items: center; gap: 8px;
+                  font-weight: 600; font-size: 16px; letter-spacing: 0; }
+  header .brand .mark { width: 26px; height: 26px; border-radius: 6px;
+                        object-fit: contain; background: #fff; }
+  header .brand .name span { color: var(--primary); }
+  #status {
+    font-size: 13px; color: var(--text-secondary); padding: 1px 8px;
+    border: 1px solid var(--border-secondary); border-radius: 4px;
+    background: #fafafa; white-space: nowrap;
+  }
+  #status.live { color: var(--success-text); background: var(--success-bg);
+                 border-color: var(--success-border); }
+  #status.warn { color: var(--warning-text); background: var(--warning-bg);
+                 border-color: var(--warning-border); }
+  #status.error { color: var(--error-text); background: var(--error-bg);
+                  border-color: var(--error-border); }
   .spacer { flex: 1; }
-  button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
-           border-radius: 8px; padding: 7px 11px; font-size: 13px; cursor: pointer; }
-  button:hover { background: #273449; }
-  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
-  button.primary:hover { background: #1d4ed8; }
-  button:disabled { opacity: .5; cursor: default; }
 
-  #stage { position: relative; flex: 1; overflow: hidden; background: #000;
-           display: flex; align-items: center; justify-content: center; touch-action: none; }
-  #frame { max-width: 100%; max-height: 100%; display: block; image-rendering: auto;
-           cursor: crosshair; }
+  button {
+    height: 32px; padding: 0 15px; font-size: 14px; font-family: var(--font);
+    color: var(--text); background: var(--bg-container); border: 1px solid var(--border);
+    border-radius: var(--radius); cursor: pointer; box-shadow: 0 2px 0 rgba(0, 0, 0, 0.02);
+    transition: color .2s, border-color .2s, background .2s, box-shadow .2s;
+    white-space: nowrap;
+  }
+  button:hover { color: var(--primary-hover); border-color: var(--primary-hover); }
+  button:active { color: var(--primary-active); border-color: var(--primary-active); }
+  button.primary { color: #fff; background: var(--primary); border-color: var(--primary);
+                   box-shadow: 0 2px 0 rgba(5, 145, 255, 0.1); }
+  button.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+  button.primary:active { background: var(--primary-active); border-color: var(--primary-active); }
+  button:disabled { color: var(--text-tertiary); background: rgba(0, 0, 0, 0.04);
+                    border-color: var(--border); box-shadow: none; cursor: not-allowed; }
+
+  #stage {
+    position: relative; flex: 1; overflow: hidden; background: #f0f0f0;
+    display: flex; align-items: center; justify-content: center; touch-action: none;
+    padding: 12px;
+  }
+  #frame {
+    max-width: 100%; max-height: 100%; display: block; image-rendering: auto;
+    cursor: crosshair; border-radius: 2px;
+    box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.12), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+    background: #000;
+  }
+  #stage.actual { overflow: auto; align-items: flex-start; justify-content: flex-start; }
   #stage.actual #frame { max-width: none; max-height: none; }
 
   #overlay { position: absolute; inset: 0; display: flex; align-items: center;
-             justify-content: center; background: rgba(2, 6, 23, .82); }
+             justify-content: center; background: rgba(0, 0, 0, 0.45);
+             backdrop-filter: blur(2px); }
   #overlay.hidden { display: none; }
-  .card { width: min(92vw, 380px); background: #0f172a; border: 1px solid #1e293b;
-          border-radius: 14px; padding: 20px; box-shadow: 0 24px 60px rgba(0,0,0,.5); }
-  .card h1 { font-size: 17px; margin: 0 0 4px; }
-  .card p { font-size: 13px; color: #94a3b8; margin: 0 0 14px; line-height: 1.45; }
-  .card label { display: block; font-size: 12px; color: #94a3b8; margin: 10px 0 4px; }
-  .card input { width: 100%; padding: 10px 12px; border-radius: 8px;
-                border: 1px solid #334155; background: #020617; color: #e2e8f0;
-                font-size: 15px; font-family: ui-monospace, monospace; }
-  .card input:focus { outline: 2px solid #2563eb; outline-offset: 1px; }
-  .card .actions { display: flex; gap: 8px; margin-top: 14px; }
-  .card .actions button { flex: 1; }
-  .err { color: #f87171; font-size: 12px; min-height: 16px; margin-top: 8px; }
+  .card {
+    width: min(92vw, 400px); background: var(--bg-container);
+    border-radius: var(--radius-lg); padding: 24px;
+    box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12),
+                0 9px 28px 8px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border-secondary);
+  }
+  .card h1 { font-size: 18px; line-height: 1.4; margin: 0 0 6px; font-weight: 600; }
+  .card p { font-size: 14px; color: var(--text-secondary); margin: 0 0 18px; line-height: 1.5715; }
+  .card label { display: block; font-size: 14px; color: var(--text); margin: 0 0 6px; }
+  .card input {
+    width: 100%; height: 40px; padding: 4px 11px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--bg-container); color: var(--text);
+    font-size: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .card input:hover { border-color: var(--primary-hover); }
+  .card input:focus { outline: none; border-color: var(--primary);
+                      box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1); }
+  .card .actions { display: flex; gap: 8px; margin-top: 20px; }
+  .card .actions button { flex: 1; height: 40px; }
+  .err { color: var(--error-text); font-size: 13px; min-height: 20px; margin-top: 8px; }
 
-  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
-           background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
-           padding: 8px 14px; border-radius: 999px; font-size: 12px;
-           opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--bg-container); color: var(--text); border: 1px solid var(--border-secondary);
+    padding: 9px 16px; border-radius: var(--radius); font-size: 14px;
+    box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+    opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20;
+  }
   #toast.show { opacity: 1; }
-  #keys { display: flex; gap: 6px; padding: 6px 10px; background: #0f172a;
-          border-top: 1px solid #1e293b; overflow-x: auto; }
-  #keys button { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+
+  #zoom {
+    height: 32px; padding: 0 8px; font-size: 14px; font-family: var(--font);
+    color: var(--text); background: var(--bg-container); border: 1px solid var(--border);
+    border-radius: var(--radius); cursor: pointer;
+  }
+  #zoom:hover { border-color: var(--primary-hover); }
+  #zoom:focus { outline: none; border-color: var(--primary);
+                box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1); }
+
+  #keys { display: flex; gap: 8px; padding: 8px 12px; background: var(--bg-container);
+          border-top: 1px solid var(--border-secondary); overflow-x: auto;
+          flex-shrink: 0; }
+  #keys button { height: 28px; padding: 0 10px; font-size: 13px; }
+  @media (max-width: 760px) {
+    header {
+      height: auto; min-height: 56px; flex-wrap: wrap;
+      padding: 8px 10px; row-gap: 8px;
+    }
+    header .brand .name { display: none; }
+    header #status { flex-shrink: 0; }
+    header button { padding: 0 9px; font-size: 13px; }
+  }
   @media (max-width: 560px) { #keys { display: none; } }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <div class="brand">Office <span>RDP</span></div>
+    <div class="brand"><img class="mark" src="/logo.png" alt="" /><span class="name">RDP <span>Link</span></span></div>
     <div id="status">Not connected</div>
     <div class="spacer"></div>
+    <select id="zoom" title="Screen scaling" aria-label="Screen scaling">
+      <option value="auto">Auto fit</option>
+      <option value="0.5">50%</option>
+      <option value="0.75">75%</option>
+      <option value="1">100%</option>
+      <option value="1.25">125%</option>
+      <option value="1.5">150%</option>
+    </select>
     <button id="btnClip" title="Sync clipboard with host">Clipboard</button>
-    <button id="btnFit" title="Toggle fit / 1:1">Fit</button>
     <button id="btnFull" title="Fullscreen">Fullscreen</button>
     <button id="btnDisc" disabled>Disconnect</button>
   </header>
@@ -122,7 +235,7 @@
     history.replaceState(null, '', location.pathname + location.search);
   }
   let connected = false;
-  let fitMode = true;
+  let zoomMode = 'auto';
   let lastUrl = null;
   let etag = '';
   let frameTimes = [], lastFrameAt = 0;
@@ -137,7 +250,10 @@
 
   const authHeaders = () => password ? { 'X-Office-Password': password } : {};
 
-  function setStatus(text) { statusEl.textContent = text; }
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.className = kind || '';
+  }
 
   function showOverlay(message) {
     if (message) errEl.textContent = message;
@@ -163,6 +279,23 @@
     return await res.blob();
   }
 
+  function applyZoom() {
+    if (zoomMode === 'auto') {
+      frame.style.width = '';
+      frame.style.height = '';
+      frame.style.maxWidth = '100%';
+      frame.style.maxHeight = '100%';
+      stage.classList.remove('actual');
+      return;
+    }
+    const z = Number(zoomMode) || 1;
+    frame.style.maxWidth = 'none';
+    frame.style.maxHeight = 'none';
+    frame.style.width = Math.round(frameW * z) + 'px';
+    frame.style.height = Math.round(frameH * z) + 'px';
+    stage.classList.add('actual');
+  }
+
   function drawBlob(blob) {
     return new Promise((resolve) => {
       const url = URL.createObjectURL(blob);
@@ -170,6 +303,7 @@
       img.onload = () => {
         frame.src = url;
         frameW = img.naturalWidth; frameH = img.naturalHeight;
+        applyZoom();
         if (lastUrl) URL.revokeObjectURL(lastUrl);
         lastUrl = url;
         resolve(true);
@@ -189,16 +323,16 @@
           if (ok) { frameTimes.push(performance.now()); lastFrameAt = Date.now(); }
         }
         if (!overlay.classList.contains('hidden')) hideOverlay();
-        if (lastFrameAt && Date.now() - lastFrameAt > 4000) setStatus('Reconnecting…');
+        if (lastFrameAt && Date.now() - lastFrameAt > 4000) setStatus('Reconnecting…', 'warn');
       } catch (e) {
         if (e.code === 401) {
           connected = false;
           $('btnDisc').disabled = true;
-          setStatus('Disconnected');
+          setStatus('Disconnected', 'error');
           showOverlay('Wrong password or sharing stopped.');
           return;
         }
-        setStatus('Reconnecting…');
+        setStatus('Reconnecting…', 'warn');
       }
       // No new frame arrived: poll gently. New frame: loop again immediately.
       const elapsed = performance.now() - started;
@@ -211,7 +345,7 @@
     const cutoff = performance.now() - 2000;
     frameTimes = frameTimes.filter((t) => t >= cutoff);
     const fps = Math.round(frameTimes.length / 2);
-    setStatus(`${frameW}×${frameH} · ${fps} fps`);
+    setStatus(`${frameW}×${frameH} · ${fps} fps`, 'live');
   }, 1000);
 
   function connect() {
@@ -220,7 +354,7 @@
     sessionStorage.setItem(STORE_KEY, password);
     connected = true;
     $('btnDisc').disabled = false;
-    setStatus('Connecting…');
+    setStatus('Connecting…', 'warn');
     loop();
   }
 
@@ -344,10 +478,13 @@
   });
 
   // -- view controls -------------------------------------------------------
-  $('btnFit').addEventListener('click', () => {
-    fitMode = !fitMode;
-    stage.classList.toggle('actual', !fitMode);
-    $('btnFit').textContent = fitMode ? 'Fit' : '1:1';
+  $('zoom').addEventListener('change', (ev) => {
+    zoomMode = ev.target.value;
+    applyZoom();
+    toast(zoomMode === 'auto' ? 'Scale: auto fit' : 'Scale: ' + Math.round(Number(zoomMode) * 100) + '%');
+  });
+  window.addEventListener('orientationchange', () => {
+    if (zoomMode === 'auto') setTimeout(applyZoom, 150);
   });
 
   $('btnFull').addEventListener('click', async () => {
@@ -360,7 +497,7 @@
   $('btnDisc').addEventListener('click', () => {
     connected = false;
     $('btnDisc').disabled = true;
-    setStatus('Disconnected');
+    setStatus('Disconnected', 'error');
     showOverlay('Disconnected. Enter the password to reconnect.');
   });
 
@@ -378,7 +515,7 @@
   if (password) {
     connected = true;
     $('btnDisc').disabled = false;
-    setStatus('Connecting…');
+    setStatus('Connecting…', 'warn');
     loop();
   } else {
     showOverlay();

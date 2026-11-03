@@ -22,7 +22,7 @@ packaging/build-macos.sh  # already produces the DMG; run again if re-signing
 ```
 
 ## Notes
-- `packaging/mac-sign.sh` submits `Office RDP.app` to Apple notary and staples.
+- `packaging/mac-sign.sh` submits `RDP Link.app` to Apple notary and staples.
 - If Apple Developer tools aren't configured, notarization is skipped.
 - Windows NSIS installer job in CI builds Windows installers with Go + Python + NSIS.
 - Android APK: use Play Store or F-Droid; not automated here.

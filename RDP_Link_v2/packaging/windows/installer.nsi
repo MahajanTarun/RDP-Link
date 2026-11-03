@@ -1,4 +1,4 @@
-; Office RDP Windows installer (NSIS)
+; RDP Link Windows installer (NSIS)
 ;
 ; Ships the Go agent plus the desktop launcher (rdp-link.exe) when it has been
 ; built. The launcher is the primary GUI (host + guest); the browser control
@@ -8,7 +8,7 @@
 ; packaging/build-windows.ps1 (Windows); build-installer.sh adds it to the
 ; payload through the generated optional-launcher.nsh include.
 
-!define APPNAME   "Office RDP"
+!define APPNAME   "RDP Link"
 !define COMPANY   "Eminent AI Labs"
 !define VERSION   "0.2.0"
 !define REGKEY    "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfficeRDP"
@@ -16,8 +16,8 @@
 !define DIST      "../../dist/windows"
 
 Name "${APPNAME}"
-OutFile "${DIST}/OfficeRDP-setup.exe"
-InstallDir "$PROGRAMFILES64\Office RDP"
+OutFile "${DIST}/RDPLink-setup.exe"
+InstallDir "$PROGRAMFILES64\RDP Link"
 InstallDirRegKey HKLM "Software\OfficeRDP" "InstallDir"
 RequestExecutionLevel admin
 Unicode true
@@ -26,7 +26,7 @@ SetCompressor /SOLID lzma
 VIProductVersion "0.2.0.0"
 VIAddVersionKey "ProductName"     "${APPNAME}"
 VIAddVersionKey "CompanyName"     "${COMPANY}"
-VIAddVersionKey "FileDescription" "Office RDP installer"
+VIAddVersionKey "FileDescription" "RDP Link installer"
 VIAddVersionKey "FileVersion"     "${VERSION}"
 VIAddVersionKey "ProductVersion"  "${VERSION}"
 VIAddVersionKey "LegalCopyright"  "© ${COMPANY}"
@@ -41,7 +41,7 @@ VIAddVersionKey "LegalCopyright"  "© ${COMPANY}"
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
-Section "Office RDP" SecMain
+Section "RDP Link" SecMain
   SectionIn RO
   SetOutPath "$INSTDIR"
   SetOverwrite on
@@ -62,15 +62,15 @@ Section "Office RDP" SecMain
   ; the browser control panel remains as a fallback.
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
   IfFileExists "$INSTDIR\rdp-link.exe" 0 launcher_missing
-    CreateShortCut "$SMPROGRAMS\${APPNAME}\Office RDP.lnk" \
+    CreateShortCut "$SMPROGRAMS\${APPNAME}\RDP Link.lnk" \
       "$INSTDIR\rdp-link.exe" "" "$INSTDIR\rdp-link.exe" 0
-    CreateShortCut "$DESKTOP\Office RDP.lnk" \
+    CreateShortCut "$DESKTOP\RDP Link.lnk" \
       "$INSTDIR\rdp-link.exe" "" "$INSTDIR\rdp-link.exe" 0
     Goto launcher_done
   launcher_missing:
-    CreateShortCut "$SMPROGRAMS\${APPNAME}\Office RDP.lnk" \
+    CreateShortCut "$SMPROGRAMS\${APPNAME}\RDP Link.lnk" \
       "$INSTDIR\office-rdp.exe" "--ui" "$INSTDIR\office-rdp.exe" 0
-    CreateShortCut "$DESKTOP\Office RDP.lnk" \
+    CreateShortCut "$DESKTOP\RDP Link.lnk" \
       "$INSTDIR\office-rdp.exe" "--ui" "$INSTDIR\office-rdp.exe" 0
   launcher_done:
   CreateShortCut "$SMPROGRAMS\${APPNAME}\Share this screen.lnk" \
@@ -96,7 +96,7 @@ Section "Office RDP" SecMain
   WriteRegDWORD HKLM "${REGKEY}" "NoRepair" 1
 
   ; Windows Firewall: allow the agent on private networks.
-  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="Office RDP" dir=in action=allow program="$INSTDIR\office-rdp.exe" enable=yes profile=private'
+  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="RDP Link" dir=in action=allow program="$INSTDIR\office-rdp.exe" enable=yes profile=private'
 SectionEnd
 
 Section "Uninstall"
@@ -107,17 +107,17 @@ Section "Uninstall"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
 
-  Delete "$SMPROGRAMS\${APPNAME}\Office RDP.lnk"
+  Delete "$SMPROGRAMS\${APPNAME}\RDP Link.lnk"
   Delete "$SMPROGRAMS\${APPNAME}\Share this screen.lnk"
   Delete "$SMPROGRAMS\${APPNAME}\Rendezvous server.lnk"
   Delete "$SMPROGRAMS\${APPNAME}\Browser control panel.lnk"
-  Delete "$SMPROGRAMS\${APPNAME}\Office RDP Launcher.lnk"
+  Delete "$SMPROGRAMS\${APPNAME}\RDP Link Launcher.lnk"
   Delete "$SMPROGRAMS\${APPNAME}\Uninstall.lnk"
   RMDir "$SMPROGRAMS\${APPNAME}"
-  Delete "$DESKTOP\Office RDP.lnk"
+  Delete "$DESKTOP\RDP Link.lnk"
 
   DeleteRegKey HKLM "${REGKEY}"
   DeleteRegKey HKLM "Software\OfficeRDP"
 
-  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="Office RDP"'
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="RDP Link"'
 SectionEnd

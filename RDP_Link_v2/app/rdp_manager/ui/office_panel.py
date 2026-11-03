@@ -1,4 +1,4 @@
-"""AnyDesk-style Office RDP panel.
+"""AnyDesk-style RDP Link panel.
 
 One card for this device (id, addresses, password, sharing controls) and one
 for connecting to a remote device. Kept independent of the RDP profile list so
@@ -39,7 +39,7 @@ def find_office_binary():
         candidates.append(os.path.join(repo_root, "dist", "windows", "office-rdp.exe"))
     elif sys.platform == "darwin":
         candidates.append(os.path.join(
-            repo_root, "dist", "macos", "Office RDP.app", "Contents", "MacOS", "office-rdp"))
+            repo_root, "dist", "macos", "RDP Link.app", "Contents", "MacOS", "office-rdp"))
     else:
         candidates.append(os.path.join(repo_root, "dist", "linux", "bin", "office-rdp-linux"))
     candidates += [
@@ -98,28 +98,33 @@ class OfficePanel(ttk.Frame):
     def _style(self):
         style = ttk.Style(self)
         style.configure("Card.TFrame", background="#ffffff")
-        style.configure("Card.TLabel", background="#ffffff")
-        style.configure("CardMuted.TLabel", background="#ffffff", foreground="#64748b")
-        style.configure("CardTitle.TLabel", background="#ffffff",
-                        font=("TkDefaultFont", 12, "bold"))
-        style.configure("Peer.TLabel", background="#ffffff",
-                        font=("TkFixedFont", 24, "bold"))
-        style.configure("Primary.TButton", padding=(14, 7),
-                        background="#2563eb", foreground="#ffffff",
-                        bordercolor="#2563eb", relief="flat")
+        style.configure("Card.TLabel", background="#ffffff", foreground="#1f1f1f")
+        style.configure("CardMuted.TLabel", background="#ffffff", foreground="#595959",
+                        font=("TkDefaultFont", 11))
+        style.configure("CardTitle.TLabel", background="#ffffff", foreground="#1f1f1f",
+                        font=("TkDefaultFont", 13, "bold"))
+        style.configure("Peer.TLabel", background="#ffffff", foreground="#1f1f1f",
+                        font=("TkFixedFont", 26, "bold"))
+        style.configure("Primary.TButton", padding=(15, 6),
+                        background="#1677ff", foreground="#ffffff",
+                        bordercolor="#1677ff", relief="solid", borderwidth=1)
         style.map("Primary.TButton",
-                  background=[("disabled", "#bfdbfe"), ("pressed", "#1e40af"),
-                              ("active", "#1d4ed8")],
-                  foreground=[("disabled", "#ffffff")])
-        style.configure("Ghost.TButton", padding=(10, 5), relief="flat",
-                        background="#ffffff", bordercolor="#e2e8f0")
+                  background=[("disabled", "#f5f5f5"), ("pressed", "#0958d9"),
+                              ("active", "#4096ff")],
+                  foreground=[("disabled", "#bfbfbf")],
+                  bordercolor=[("disabled", "#d9d9d9")])
+        style.configure("Ghost.TButton", padding=(11, 4), relief="solid",
+                        borderwidth=1, background="#ffffff", foreground="#1f1f1f",
+                        bordercolor="#d9d9d9")
         style.map("Ghost.TButton",
-                  background=[("pressed", "#e2e8f0"), ("active", "#f8fafc")])
+                  foreground=[("active", "#1677ff")],
+                  bordercolor=[("active", "#4096ff")],
+                  background=[("pressed", "#f5f5f5"), ("active", "#ffffff")])
 
     def _card(self, parent, title):
-        outer = tk.Frame(parent, bg="#ffffff", highlightbackground="#e2e8f0",
+        outer = tk.Frame(parent, bg="#ffffff", highlightbackground="#f0f0f0",
                          highlightthickness=1)
-        inner = ttk.Frame(outer, style="Card.TFrame", padding=(14, 12))
+        inner = ttk.Frame(outer, style="Card.TFrame", padding=(20, 16))
         inner.pack(fill="both", expand=True)
         ttk.Label(inner, text=title, style="CardTitle.TLabel").pack(anchor="w")
         return outer, inner
@@ -135,7 +140,7 @@ class OfficePanel(ttk.Frame):
         card, body = self._card(self, "This device")
         card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
 
-        ttk.Label(body, text="Office ID", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
+        ttk.Label(body, text="RDP Link ID", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
         row = ttk.Frame(body, style="Card.TFrame")
         row.pack(fill="x")
         ttk.Label(row, textvariable=self.peer_id, style="Peer.TLabel").pack(side="left")
@@ -156,7 +161,7 @@ class OfficePanel(ttk.Frame):
         ttk.Button(row, text="Copy", style="Ghost.TButton",
                    command=lambda: self._copy(self.wan_addr.get(), "WAN address")).pack(side="right")
 
-        ttk.Separator(body).pack(fill="x", pady=10)
+        tk.Frame(body, bg="#f0f0f0", height=1).pack(fill="x", pady=12)
 
         ttk.Label(body, text="Access password", style="CardMuted.TLabel").pack(anchor="w")
         row = ttk.Frame(body, style="Card.TFrame")
@@ -207,7 +212,11 @@ class OfficePanel(ttk.Frame):
         ttk.Label(body, text="Recent devices", style="CardMuted.TLabel").pack(anchor="w", pady=(12, 0))
         self.recent_box = tk.Listbox(body, height=4, activestyle="none",
                                      borderwidth=0, highlightthickness=1,
-                                     highlightbackground="#e2e8f0")
+                                     highlightbackground="#d9d9d9",
+                                     background="#ffffff", foreground="#1f1f1f",
+                                     selectbackground="#e6f4ff",
+                                     selectforeground="#1f1f1f",
+                                     font=("TkDefaultFont", 12))
         self.recent_box.pack(fill="both", expand=True, pady=(2, 0))
         self.recent_box.bind("<Double-1>", lambda e: self.connect())
         self._refresh_recent()
@@ -251,14 +260,14 @@ class OfficePanel(ttk.Frame):
     def start_host(self):
         binp = find_office_binary()
         if not binp:
-            messagebox.showerror("Office RDP", "office-rdp binary not found. Build it first.")
+            messagebox.showerror("RDP Link", "office-rdp binary not found. Build it first.")
             return
         if self.host_proc is not None and self.host_proc.poll() is None:
             self._set_state("Already sharing", "#f59e0b")
             return
         password = self.password.get().strip()
         if not password:
-            messagebox.showerror("Office RDP", "Set an access password before sharing.")
+            messagebox.showerror("RDP Link", "Set an access password before sharing.")
             return
         self.config_data.update({
             "password": password,
@@ -276,7 +285,7 @@ class OfficePanel(ttk.Frame):
                 args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
             )
         except Exception as exc:
-            messagebox.showerror("Office RDP", str(exc))
+            messagebox.showerror("RDP Link", str(exc))
             return
         self.start_btn.state(["disabled"])
         self.stop_btn.state(["!disabled"])
@@ -309,7 +318,7 @@ class OfficePanel(ttk.Frame):
         self.lan_addr.set(lan)
         self.wan_addr.set(wan)
         self._set_state("Sharing this screen", "#22c55e")
-        self.status_callback(f"Office RDP sharing on {lan}")
+        self.status_callback(f"RDP Link sharing on {lan}")
 
     def stop_host(self):
         if self.host_proc is not None and self.host_proc.poll() is None:
@@ -324,7 +333,7 @@ class OfficePanel(ttk.Frame):
         self.start_btn.state(["!disabled"])
         self.stop_btn.state(["disabled"])
         self._set_state("Idle — not sharing this screen", "#94a3b8")
-        self.status_callback("Office RDP sharing stopped")
+        self.status_callback("RDP Link sharing stopped")
 
     def _set_state(self, text, color):
         self.state_text.set(text)
@@ -338,7 +347,7 @@ class OfficePanel(ttk.Frame):
             if selection:
                 target = self.recent_box.get(selection[0]).split("  —  ")[-1]
         if not target:
-            messagebox.showerror("Office RDP", "Enter an address or peer ID.")
+            messagebox.showerror("RDP Link", "Enter an address or peer ID.")
             return
         password = self.connect_password.get() or self.password.get()
         if target.replace(" ", "").isdigit() and len(target.replace(" ", "")) == 9:
@@ -354,7 +363,7 @@ class OfficePanel(ttk.Frame):
         rendezvous = self.rendezvous.get().strip()
         if not rendezvous:
             rendezvous = simpledialog.askstring(
-                "Office RDP", "Rendezvous URL to resolve this peer ID:", parent=self
+                "RDP Link", "Rendezvous URL to resolve this peer ID:", parent=self
             )
             if not rendezvous:
                 return None
@@ -364,11 +373,11 @@ class OfficePanel(ttk.Frame):
             with urllib.request.urlopen(url, timeout=5) as response:
                 info = json.load(response)
         except Exception as exc:
-            messagebox.showerror("Office RDP", f"Could not resolve peer: {exc}")
+            messagebox.showerror("RDP Link", f"Could not resolve peer: {exc}")
             return None
         addr = info.get("addr") or info.get("lanIp") or ""
         if not addr:
-            messagebox.showerror("Office RDP", "Rendezvous returned no address for this peer.")
+            messagebox.showerror("RDP Link", "Rendezvous returned no address for this peer.")
             return None
         return addr
 
@@ -376,7 +385,7 @@ class OfficePanel(ttk.Frame):
         try:
             subprocess.Popen(viewer_argv(address, password))
         except Exception as exc:
-            messagebox.showerror("Office RDP", f"Could not open viewer: {exc}")
+            messagebox.showerror("RDP Link", f"Could not open viewer: {exc}")
             return
         self.status_callback(f"Opening viewer for {address}")
 
@@ -401,12 +410,12 @@ class OfficePanel(ttk.Frame):
             return
         try:
             out = subprocess.check_output([binp, "--pair-code"], text=True, timeout=5).strip()
-            messagebox.showinfo("Office RDP pairing code", out or "No code returned")
+            messagebox.showinfo("RDP Link pairing code", out or "No code returned")
         except Exception as exc:
-            messagebox.showerror("Office RDP", str(exc))
+            messagebox.showerror("RDP Link", str(exc))
 
     def wake_on_lan(self):
-        mac = simpledialog.askstring("Office RDP", "MAC address (aa:bb:cc:dd:ee:ff):", parent=self)
+        mac = simpledialog.askstring("RDP Link", "MAC address (aa:bb:cc:dd:ee:ff):", parent=self)
         if not mac:
             return
         binp = find_office_binary()
@@ -416,14 +425,14 @@ class OfficePanel(ttk.Frame):
             subprocess.Popen([binp, "--wake", mac])
             self.status_callback(f"Wake packet sent to {mac}")
         except Exception as exc:
-            messagebox.showerror("Office RDP", str(exc))
+            messagebox.showerror("RDP Link", str(exc))
 
     def unattended_access(self):
         binp = find_office_binary()
         if not binp:
             return
         if not messagebox.askyesno(
-            "Office RDP",
+            "RDP Link",
             "Install the host agent as a background service so this device can be "
             "reached without the app open?",
         ):
@@ -431,9 +440,9 @@ class OfficePanel(ttk.Frame):
         try:
             out = subprocess.check_output([binp, "--install-service"], text=True,
                                           stderr=subprocess.STDOUT, timeout=30)
-            messagebox.showinfo("Office RDP", out or "Service installed.")
+            messagebox.showinfo("RDP Link", out or "Service installed.")
         except Exception as exc:
-            messagebox.showerror("Office RDP", str(exc))
+            messagebox.showerror("RDP Link", str(exc))
 
     # -- helpers -------------------------------------------------------------
     def _copy(self, value, label):

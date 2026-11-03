@@ -49,7 +49,7 @@ if ($NSIS) {
     Push-Location (Join-Path $Root "packaging\windows")
     makensis installer.nsi
     Pop-Location
-    Write-Host "Built installer: $Root\dist\windows\OfficeRDP-setup.exe"
+    Write-Host "Built installer: $Root\dist\windows\RDPLink-setup.exe"
 }
 
 Write-Host "Built: $Dist\rdp-link.exe"

@@ -19,7 +19,7 @@ build_deb() {
 Package: office-rdp
 Version: 0.2.0
 Architecture: ${arch}
-Maintainer: Office RDP <root@example.com>
+Maintainer: RDP Link <root@example.com>
 Description: Cross-platform desktop sharing agent and viewer
 Depends: libc6, libx11-6, libxext6, libxrandr2, libxinerama1, libxcursor1, libxi6, libxtst6
 PCONTROL
@@ -30,7 +30,7 @@ PCONTROL
   fi
   mkdir -p "$art/usr/share/doc/office-rdp"
   cat > "$art/usr/share/doc/office-rdp/README" <<'PREADME'
-Office RDP for Linux
+RDP Link for Linux
 ====================
 
   office-rdp --host --port 8088 --password <secret>   share this desktop
@@ -46,14 +46,14 @@ PREADME
   cat > "$art/usr/share/applications/office-rdp.desktop" <<PDESKTOP
 [Desktop Entry]
 Type=Application
-Name=Office RDP
+Name=RDP Link
 Exec=/usr/bin/office-rdp --host --port 8088
 Terminal=false
 NoDisplay=true
 PDESKTOP
   docker run --rm -v "$art":/work -v "$STAGE":/out \
-    alpine:3.19 sh -c "apk add dpkg >/dev/null && dpkg-deb --build /work /out/officerdp-linux-${arch}.deb"
-  mv "$STAGE/officerdp-linux-${arch}.deb" "$DIST/officerdp-linux-${arch}.deb"
+    alpine:3.19 sh -c "apk add dpkg >/dev/null && dpkg-deb --build /work /out/rdplink-linux-${arch}.deb"
+  mv "$STAGE/rdplink-linux-${arch}.deb" "$DIST/rdplink-linux-${arch}.deb"
   rm -rf "$art"
 }
 
@@ -65,5 +65,5 @@ case "$host_arch" in
   arm64|aarch64) native=arm64 ;;
   *) native=amd64 ;;
 esac
-cp "$DIST/officerdp-linux-${native}.deb" "$DIST/officerdp-linux.deb"
-echo "Built: $DIST/officerdp-linux-{arm64,amd64}.deb"
+cp "$DIST/rdplink-linux-${native}.deb" "$DIST/rdplink-linux.deb"
+echo "Built: $DIST/rdplink-linux-{arm64,amd64}.deb"

@@ -1,4 +1,4 @@
-# RDP Link → Office RDP — Detailed Development Plan
+# RDP Link → RDP Link — Detailed Development Plan
 
 > **Status:** PLAN ONLY — no code changes in this phase.  
 > **Author:** Planning pass, 2026-11-01 (Rechecked 2026-11-01) · Repo: `MahajanTarun/RDP-Link` (v4.5.0)  
@@ -14,7 +14,7 @@
 
 1. [Executive summary](#1-executive-summary)
 2. [Current-state audit](#2-current-state-audit)
-3. [Product definition — what "Office RDP" means](#3-product-definition--what-office-rdp-means)
+3. [Product definition — what "RDP Link" means](#3-product-definition--what-office-rdp-means)
 4. [Architecture — target system](#4-architecture--target-system)
 5. [Network & connectivity design (LAN/WAN, NAT traversal)](#5-network--connectivity-design-lanwan-nat-traversal)
 6. [Identity, pairing & discovery (the AnyDesk-like ID)](#6-identity-pairing--discovery-the-anydesk-like-id)
@@ -70,7 +70,7 @@
 - **CI:** `pyflakes` + `pytest` + CLI smoke + builds on `macos-latest` /
   `ubuntu-latest` (`.github/workflows/ci.yml:1`).
 
-### What "Office RDP" must add
+### What "RDP Link" must add
 
 | Gap vs. brief | Concrete requirement |
 |---|---|
@@ -142,7 +142,7 @@
 
 ---
 
-## 3. Product definition — what "Office RDP" means
+## 3. Product definition — what "RDP Link" means
 
 ### 3.1 Roles
 
@@ -497,7 +497,7 @@ prototype `legacy_rdp` plugin wrapper to ensure FreeRDP parity toggles remain.
 
 | Platform | Artifact(s) | Install Method | Notes |
 |---|---|---|---|
-| macOS | `OfficeRDP-<ver>-universal.dmg` containing `Office RDP.app`, `office-rdp` CLI, and `office-rdp-agent` LaunchAgent helper | Drag to `/Applications`; optional `brew install --cask officerdp` | Universal2 (x86_64 + arm64), notarized, TCC permissions declared, LaunchAgent auto-start for host |
+| macOS | `OfficeRDP-<ver>-universal.dmg` containing `RDP Link.app`, `office-rdp` CLI, and `office-rdp-agent` LaunchAgent helper | Drag to `/Applications`; optional `brew install --cask officerdp` | Universal2 (x86_64 + arm64), notarized, TCC permissions declared, LaunchAgent auto-start for host |
 | Linux | `.deb` (APT), `.rpm` (DNF/YUM), `OfficeRDP-<ver>-x86_64.AppImage`, `office-rdp_<ver>_amd64.tar.gz` (portable), AUR `officerdp` | `sudo dpkg -i *.deb` or `sudo rpm -i *.rpm` or run AppImage (chmod +x) | Single binary with `office-rdp`, `office-rdp-agent` (systemd --user), `office-rdp-cli`. Works on X11/Wayland. Supports headless. |
 | Windows | `OfficeRDP-Setup-<ver>.exe` (NSIS installer), `OfficeRDP-<ver>-portable.zip`, `OfficeRDP-<ver>.msix` (optional) | Run installer (per-user or system), extract portable zip, or install MSIX | Registers background agent as user service/helper, WGC/DXGI capture, works for both host+guest. No admin required for normal use. |
 | Android | `OfficeRDP-<ver>.apk` (universal or split ABIs), `OfficeRDP-<ver>.aab` (Play Store), F-Droid build variant | Sideload APK, install from F-Droid, or distribute AAB | Single app for host and guest. Foreground service for host (MediaProjection), AccessibilityService for input injection, full A/V, multi-session, multi-device. Supports Android 10+. |
@@ -571,7 +571,7 @@ Clipboard/file transfers are per-message consent when policy is "ask".
 
 ## 12. Feature catalogue (prioritised)
 
-### P0 — must ship with first Office RDP release (Phase 1)
+### P0 — must ship with first RDP Link release (Phase 1)
 
 - **Single install, all roles:** Host+Guest on Linux/macOS/Windows and **Android (single APK)**. True bidirectional and multi-device/multi-connection (N guests ↔ N hosts).
 - Peer ID + alias/mDNS discovery + LAN zero-infra works offline (no internet required).
@@ -718,7 +718,7 @@ This honours "On-The-Go" in the brief.
 
 **Depends on:** nothing. **Blocks:** everything.
 
-### Phase 1 — Office RDP v1 (P0) (10–12 weeks after Phase 0 gates)
+### Phase 1 — RDP Link v1 (P0) (10–12 weeks after Phase 0 gates)
 
 1. **Core transport + signalling** (wks 1–4)
    - DTLS-SRTP + ICE (or chosen equivalent) with trickle.
@@ -785,7 +785,7 @@ major regression vs. current RDP Link for daily work. See §18 gates.
    Data-residency requirements? (Determines relay routing.)
 3. **Unattended access policy** — org default? Need SSO (OIDC) in v1 or can it wait to Phase 2?
 4. **Compliance** — any requirement for session audit export / retention in the office?
-5. **Branding** — keep `RDP Link` name or rename to `Office RDP` / `Office Link`? Keep `com.eminentailabs.rdplink` bundle id or migrate?
+5. **Branding** — keep `RDP Link` name or rename to `RDP Link` / `Office Link`? Keep `com.eminentailabs.rdplink` bundle id or migrate?
 
 ---
 
@@ -799,7 +799,7 @@ major regression vs. current RDP Link for daily work. See §18 gates.
 - [ ] CI still green on new layout; `python ubuntu_rdp_manager.py --version`
       and `--list` smoke still pass (`.github/workflows/ci.yml:28` parity).
 
-### Gate 1 (Office RDP v1 release)
+### Gate 1 (RDP Link v1 release)
 
 - [ ] `pytest` + `pyflakes` green (`ci.yml:25`); new core crate tests green.
 - [ ] Multi-device/multi-directional dog-food: 5 hosts × 10 guests (including Android host+guest), LAN + WAN/relay, 1 week, zero orphan cam/mic
@@ -893,7 +893,7 @@ These are budgets, not guarantees — tune quality ladder to stay within them.
   keep working exactly as today via FreeRDP — no re-pairing, no new deps,
   `secrets.py` store untouched (`rdp_manager/__init__.py:16` `SECRET_SERVICE`
   stays).
-- New flow is additive: users see a banner "Enable Office RDP streaming
+- New flow is additive: users see a banner "Enable RDP Link streaming
   (no xrdp needed) → Show my ID" and can opt in.
 
 ### 21.2 IDs & naming

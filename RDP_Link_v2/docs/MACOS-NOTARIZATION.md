@@ -17,7 +17,7 @@ APPLE_TEAM_ID="1234567890"
 Then build + package + notarize:
 ```sh
 packaging/build-macos.sh            # uses CODESIGN_IDENTITY and signs with it
-packaging/mac-notarize.sh dist/macos/OfficeRDP-macos.dmg    # submits to Apple
+packaging/mac-notarize.sh dist/macos/RDPLink-macos.dmg    # submits to Apple
 ```
 
 ## Notes

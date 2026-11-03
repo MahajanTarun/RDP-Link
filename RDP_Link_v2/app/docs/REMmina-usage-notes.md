@@ -1,4 +1,4 @@
-# Remmina — Lessons for Office RDP (RDP Link upgrade)
+# Remmina — Lessons for RDP Link (RDP Link upgrade)
 
 > Reviewed from https://remmina.org/remmina-features/ and https://gitlab.com/Remmina/Remmina. This is a comparative analysis to inform the plan in `docs/PLAN-office-rdp.md`. No code changes made.
 
@@ -6,7 +6,7 @@
 Remmina is a mature, multi-protocol remote connection manager (GTK/Qt direction) supporting RDP, VNC, SSH, SFTP, SPICE, NX, XDMCP, WWW, EXEC, with a plugin architecture. It focuses on **connection management, protocol translation via FreeRDP/VNC/SPICE libs, tunneling/SSH, and UX polish** rather than being a self-hosting "RDP host server + P2P rendezvous" like AnyDesk/RustDesk.
 
 ## What Remmina does well (adopt ideas)
-| Area | Notes | Apply to Office RDP? |
+| Area | Notes | Apply to RDP Link? |
 |---|---|---|
 | **Plugin model** | Per-protocol plugins (RDP/VNC/SPICE/SSH/SFTP/etc.), clear feature toggles. | Yes — structure `core/transport/` as protocol/transport plugins (RDP-compat, native P2P/DTLS, VNC fallback). Keep FreeRDP for `legacyRdp` as a "plugin". |
 | **Connection UX** | Groups, recent list, double-click connect, remember view mode per connection, tabs, search, tray, keystrokes, host key customization, fullscreen behavior. | Strongly — mirror launcher UX in `app/ui/app.py` (groups/tabs/recent/search), keep "thin launcher" feel. |

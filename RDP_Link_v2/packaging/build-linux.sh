@@ -71,5 +71,5 @@ chmod +x "$DIST/bin/"* "$DIST/rdp-link"
 
 echo "==> Package tarball"
 cd "$DIST"
-tar czf "$DIST/officerdp-linux.tar.gz" rdp-link bin
-echo "Built: $DIST/officerdp-linux.tar.gz"
+tar czf "$DIST/rdplink-linux.tar.gz" rdp-link bin
+echo "Built: $DIST/rdplink-linux.tar.gz"

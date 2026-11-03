@@ -31,7 +31,7 @@ func DefaultPath() string {
 	home, _ := os.UserHomeDir()
 	base := filepath.Join(home, ".config", "office-rdp")
 	if _, err := os.Stat(filepath.Join(home, "Library", "Application Support")); err == nil {
-		base = filepath.Join(home, "Library", "Application Support", "Office RDP")
+		base = filepath.Join(home, "Library", "Application Support", "Office RDP") // keep the legacy path so identities survive the rename
 	}
 	return filepath.Join(base, "identity.json")
 }

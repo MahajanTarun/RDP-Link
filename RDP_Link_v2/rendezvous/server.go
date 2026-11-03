@@ -293,7 +293,7 @@ func Run(addr string) error {
 
 const clientHTML = `<!DOCTYPE html>
 <html><body style="margin:0;background:#111;color:#eee;font-family:sans-serif">
-<h3 style="margin:8px">Office RDP Web Guest</h3>
+<h3 style="margin:8px">RDP Link Web Guest</h3>
 <input id="host" placeholder="Host Peer ID" style="margin:8px" />
 <button onclick="connect()">Connect</button>
 <video id="v" autoplay playsinline style="max-width:100%;max-height:85vh;display:block;margin:auto;background:#000"></video>

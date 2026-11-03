@@ -1,4 +1,4 @@
-# Windows installer (Office RDP) — NSIS
+# Windows installer (RDP Link) — NSIS
 
 ## What ships
 
@@ -47,11 +47,11 @@ Outputs:
 - `dist\windows\rdp-link.exe`
 - `dist\windows\office-rdp.exe`
 - `dist\windows\office-rdp-rendezvous.exe`
-- `dist\windows\OfficeRDP-setup.exe`
+- `dist\windows\RDPLink-setup.exe`
 
 ## Runtime
 
-- Installs to `C:\Program Files\Office RDP\` and registers in Add/Remove
+- Installs to `C:\Program Files\RDP Link\` and registers in Add/Remove
   Programs.
 - Adds a firewall rule for `office-rdp.exe` on private networks.
 - Share from the launcher (**Start sharing**) or a terminal:

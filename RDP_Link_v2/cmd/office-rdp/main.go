@@ -263,7 +263,7 @@ func main() {
 			}
 			path := filepath.Join(dir, "office-rdp.service")
 			content := fmt.Sprintf(`[Unit]
-Description=Office RDP host agent
+Description=RDP Link host agent
 [Service]
 ExecStart=%s --host --port 8088 --password %s
 Restart=always

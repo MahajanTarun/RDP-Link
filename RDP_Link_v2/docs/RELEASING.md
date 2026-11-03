@@ -1,4 +1,4 @@
-# Releasing Office RDP
+# Releasing RDP Link
 
 Version is `0.2.0` in:
 
@@ -47,8 +47,8 @@ in `~/.config/officerdp/android-signing.env` (both `0600`, never committed).
 set -a; . ~/.config/officerdp/android-signing.env; set +a
 cd android
 gradle clean assembleRelease bundleRelease
-cp app/build/outputs/apk/release/app-release.apk   ../dist/android/OfficeRDP-android-release.apk
-cp app/build/outputs/bundle/release/app-release.aab ../dist/android/OfficeRDP-android-release.aab
+cp app/build/outputs/apk/release/app-release.apk   ../dist/android/RDPLink-android-release.apk
+cp app/build/outputs/bundle/release/app-release.aab ../dist/android/RDPLink-android-release.aab
 ```
 
 The gomobile AAR (shared Go identity/peer ID) is optional. Rebuild it with:

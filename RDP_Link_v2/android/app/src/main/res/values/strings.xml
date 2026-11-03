@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Office RDP</string>
-    <string name="accessibility_description">Lets a guest you invited tap and type on this device. Office RDP does not read your screen through this service.</string>
+    <string name="app_name">RDP Link</string>
+    <string name="accessibility_description">Lets a guest you invited tap and type on this device. RDP Link does not read your screen through this service.</string>
 </resources>

@@ -21,7 +21,7 @@ cd "$ROOT"
 # multi-arch binaries or a nested bin/ directory.
 rm -rf "${DIST:?}/bin"
 rm -f "$DIST/office-rdp.exe" "$DIST/office-rdp-rendezvous.exe" \
-      "$DIST/OfficeRDP-setup.exe"
+      "$DIST/RDPLink-setup.exe"
 
 CGO_OK=0
 if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
@@ -46,7 +46,7 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
   go build -trimpath -ldflags "-s -w" -o "$DIST/office-rdp-rendezvous.exe" ./cmd/rendezvous
 
 cat > "$DIST/README.txt" <<'EOF'
-Office RDP for Windows
+RDP Link for Windows
 ======================
 
 Start the desktop app (share this screen and control other devices):
@@ -103,12 +103,12 @@ build_with_docker() {
   [[ -f "$DIST/rdp-link.exe" ]] && cp "$DIST/rdp-link.exe" "$stage/dist/windows/"
   docker run --rm -v "$stage:/work" debian:bookworm-slim \
     sh -c 'apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq nsis >/dev/null 2>&1 && cd /work/packaging/windows && makensis installer.nsi'
-  cp "$stage/dist/windows/OfficeRDP-setup.exe" "$DIST/OfficeRDP-setup.exe"
+  cp "$stage/dist/windows/RDPLink-setup.exe" "$DIST/RDPLink-setup.exe"
 }
 
 if command -v makensis >/dev/null 2>&1; then
   if ! makensis "$ROOT/packaging/windows/installer.nsi" \
-       || [[ ! -s "$DIST/OfficeRDP-setup.exe" ]]; then
+       || [[ ! -s "$DIST/RDPLink-setup.exe" ]]; then
     build_with_docker
   fi
 else
@@ -116,5 +116,5 @@ else
 fi
 
 ls -lh "$DIST/office-rdp.exe" "$DIST/office-rdp-rendezvous.exe" \
-       "$DIST/OfficeRDP-setup.exe"
-echo "Built: $DIST/OfficeRDP-setup.exe"
+       "$DIST/RDPLink-setup.exe"
+echo "Built: $DIST/RDPLink-setup.exe"

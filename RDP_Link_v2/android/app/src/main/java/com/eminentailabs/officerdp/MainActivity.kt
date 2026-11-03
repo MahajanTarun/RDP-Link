@@ -12,6 +12,8 @@ import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
@@ -32,6 +34,15 @@ class MainActivity : Activity() {
 
     private val prefs by lazy { getSharedPreferences("officerdp", Context.MODE_PRIVATE) }
 
+    private var sharing = false
+    private val ui = Handler(Looper.getMainLooper())
+    private val statusTick = object : Runnable {
+        override fun run() {
+            refreshRemoteControlStatus()
+            ui.postDelayed(this, 2000)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -44,7 +55,7 @@ class MainActivity : Activity() {
         statusView = findViewById(R.id.status)
         statusView.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            toast("Enable Office RDP remote control")
+            toast("Enable RDP Link remote control")
         }
 
         peerIdView.text = PeerIdentity.get(this)
@@ -54,7 +65,7 @@ class MainActivity : Activity() {
 
         findViewById<Button>(R.id.copyId).setOnClickListener {
             val cm = getSystemService(ClipboardManager::class.java)
-            cm.setPrimaryClip(ClipData.newPlainText("Office RDP peer id", peerIdView.text))
+            cm.setPrimaryClip(ClipData.newPlainText("RDP Link peer id", peerIdView.text))
             toast("Peer ID copied")
         }
         findViewById<Button>(R.id.genPassword).setOnClickListener {
@@ -67,12 +78,14 @@ class MainActivity : Activity() {
             startActivityForResult(projectionManager.createScreenCaptureIntent(), REQUEST_CODE)
         }
         findViewById<Button>(R.id.stopHost).setOnClickListener {
+            sharing = false
             stopService(Intent(this, HostService::class.java))
-            statusView.text = "Sharing stopped"
+            setStatus("Sharing stopped")
+            refreshRemoteControlStatus()
         }
         findViewById<Button>(R.id.enableA11y).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            toast("Enable Office RDP remote control")
+            toast("Enable RDP Link remote control")
         }
 
         val url = findViewById<EditText>(R.id.url)
@@ -92,6 +105,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        ui.removeCallbacks(statusTick)
         saveSettings()
         super.onPause()
     }
@@ -100,16 +114,30 @@ class MainActivity : Activity() {
         super.onResume()
         refreshRemoteControlStatus()
         // The accessibility service can bind a moment after the activity
-        // resumes, so check once more shortly after.
-        statusView.postDelayed({ refreshRemoteControlStatus() }, 800)
+        // resumes; keep the tag in sync while the screen is visible.
+        ui.removeCallbacks(statusTick)
+        ui.postDelayed(statusTick, 800)
+    }
+
+    /** Ant Design "Tag" styling for the status line. */
+    private fun setStatus(text: String, kind: String = "neutral") {
+        statusView.text = text
+        val (background, foreground) = when (kind) {
+            "success" -> R.drawable.bg_tag_success to R.color.antd_success_text
+            "error" -> R.drawable.bg_tag_error to R.color.antd_error_text
+            else -> R.drawable.bg_tag_neutral to R.color.antd_text_secondary
+        }
+        statusView.setBackgroundResource(background)
+        statusView.setTextColor(resources.getColor(foreground, theme))
     }
 
     private fun refreshRemoteControlStatus() {
+        if (sharing) return  // keep the sharing message visible
         val a11y = InputAccessibilityService.instance != null || accessibilityServiceEnabled()
-        statusView.text = if (a11y) {
-            "Remote control enabled"
+        if (a11y) {
+            setStatus("Remote control enabled", "success")
         } else {
-            "Remote control disabled — taps will not be injected"
+            setStatus("Remote control disabled — taps will not be injected", "error")
         }
     }
 
@@ -149,9 +177,10 @@ class MainActivity : Activity() {
             } else {
                 startService(intent)
             }
-            statusView.text = "Sharing started on port ${portView.text}"
+            sharing = true
+            setStatus("Sharing started on port ${portView.text}", "success")
         } else if (requestCode == REQUEST_CODE) {
-            statusView.text = "Screen capture permission denied"
+            setStatus("Screen capture permission denied", "error")
         }
     }
 

@@ -7,7 +7,7 @@ Design principles:
 """
 
 __version__ = "0.2.0"
-APP_NAME = "Office RDP"
+APP_NAME = "RDP Link"
 BUNDLE_ID = "com.eminentailabs.rdplink"
 
 # Keychain/secret service name. Deliberately unchanged from the app's

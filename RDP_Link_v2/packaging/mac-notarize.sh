@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Optional Apple notarization helper for Office RDP macOS artifacts.
+# Optional Apple notarization helper for RDP Link macOS artifacts.
 # Usage:
-#   packaging/mac-notarize.sh dist/macos/OfficeRDP-macos.dmg
+#   packaging/mac-notarize.sh dist/macos/RDPLink-macos.dmg
 #
 # Required env:
 #   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 set -euo pipefail
 FILE="${1:-}"
-[[ -n "$FILE" && -f "$FILE" ]] || { echo "usage: $0 <path/to/OfficeRDP-macos.dmg>"; exit 2; }
+[[ -n "$FILE" && -f "$FILE" ]] || { echo "usage: $0 <path/to/RDPLink-macos.dmg>"; exit 2; }
 : "${APPLE_ID:?APPLE_ID required}"
 : "${APPLE_APP_SPECIFIC_PASSWORD:?APPLE_APP_SPECIFIC_PASSWORD required}"
 : "${APPLE_TEAM_ID:?APPLE_TEAM_ID required}"

@@ -348,6 +348,11 @@ func (a *Agent) Serve() error {
 		json.NewEncoder(w).Encode(map[string]any{"recording": rec, "path": path})
 	})
 
+	mux.HandleFunc("/logo.png", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(logoPNG)
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -416,6 +421,9 @@ var viewerHTML string
 
 //go:embed ui.html
 var uiHTML string
+
+//go:embed logo.png
+var logoPNG []byte
 
 func lanIP() string {
 	ifaces, _ := net.Interfaces()

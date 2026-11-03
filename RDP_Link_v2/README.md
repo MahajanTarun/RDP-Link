@@ -1,8 +1,8 @@
-# Office RDP
+# RDP Link
 
 Cross-platform remote desktop with a Go core: macOS, Linux, Windows, and
 Android can each share their screen and control another device. The UI follows
-the AnyDesk/RustDesk model — a 9-digit Office ID for WAN, a LAN address for the
+the AnyDesk/RustDesk model — a 9-digit RDP Link ID for WAN, a LAN address for the
 local network, and a password for every connection.
 
 This is the v2 tree. The shipping v4.5 Python app in the parent folder is
@@ -13,15 +13,19 @@ untouched.
 | | Host | Guest |
 | --- | --- | --- |
 | macOS | live | desktop viewer (`rdp-link`) + browser |
-| Linux | live | desktop viewer (`rdp-link`) + browser |
+| Linux | live (real X session) | desktop viewer (`rdp-link`) + browser |
 | Windows | live via `--test-pattern` under Wine; real GDI capture needs Windows | `rdp-link.exe` (validated under Wine) + browser |
-| Android | live (MediaProjection) | full-screen `ViewerActivity` + browser |
+| Android | live on a physical phone (MediaProjection) | full-screen `ViewerActivity` + browser |
 
 Every host also serves the browser viewer at `http://<host>:<port>/`, so any
 device with a browser can be a guest without installing anything.
 
-See [`docs/VALIDATION.md`](docs/VALIDATION.md) for the full matrix, live
-evidence, and known limitations.
+All surfaces use an Ant Design 5 light theme (see
+[`docs/UI-DESIGN.md`](docs/UI-DESIGN.md)).
+
+- [`docs/VALIDATION.md`](docs/VALIDATION.md) — OS × host/guest matrix and live evidence
+- [`docs/TESTING.md`](docs/TESTING.md) — devices, tools, methodology, how to reproduce
+- [`docs/UI-DESIGN.md`](docs/UI-DESIGN.md) — design tokens and per-surface mapping
 
 ## Layout
 
@@ -33,7 +37,7 @@ evidence, and known limitations.
 - `app/` — desktop launcher (Python/Tk) and `office_viewer.py` guest.
 - `android/` — native Kotlin host service + full-screen viewer.
 - `packaging/` — macOS, Linux, Windows, Android build scripts.
-- `docs/` — plan, ADRs, security, privacy, F-Droid notes, releasing guide.
+- `docs/` — plan, ADRs, security, privacy, testing, UI design, releasing guide.
 
 ## Quick start
 

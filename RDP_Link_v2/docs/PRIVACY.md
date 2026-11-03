@@ -1,8 +1,8 @@
-# Privacy policy — Office RDP
+# Privacy policy — RDP Link
 
 Last updated: 2026-11-03
 
-Office RDP is a self-hosted remote desktop tool. It has no user accounts and
+RDP Link is a self-hosted remote desktop tool. It has no user accounts and
 does not include analytics, advertising, or crash-reporting SDKs.
 
 ## What the app processes

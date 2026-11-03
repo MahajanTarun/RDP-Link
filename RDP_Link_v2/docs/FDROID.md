@@ -53,7 +53,7 @@
    License: MIT
    SourceCode: https://github.com/<org>/office-rdp
    IssueTracker: https://github.com/<org>/office-rdp/issues
-   AutoName: Office RDP
+   AutoName: RDP Link
 
    RepoType: git
    Repo: https://github.com/<org>/office-rdp.git

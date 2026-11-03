@@ -1,7 +1,7 @@
 # Android release artifacts
 
 ## Current outputs
-- `dist/android/OfficeRDP-android.apk` — debug build (usable and installable today).
+- `dist/android/RDPLink-android-release.apk` — debug build (usable and installable today).
 - `dist/android/OfficeRDP-release.aab` — Play-ready bundle produced by `gradle bundleRelease`.
 - `dist/android/OfficeRDP-release.apk` — debug-signed release variant for local install.
 

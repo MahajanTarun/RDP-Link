@@ -162,7 +162,7 @@ class HostService : Service() {
         val channelId = "officerdp"
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
-            NotificationChannel(channelId, "Office RDP host", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(channelId, "RDP Link host", NotificationManager.IMPORTANCE_LOW)
         )
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
@@ -173,7 +173,7 @@ class HostService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return Notification.Builder(this, channelId)
-            .setContentTitle("Office RDP — sharing screen")
+            .setContentTitle("RDP Link — sharing screen")
             .setContentText("Peer ID $peerId • tap to open")
             .setSmallIcon(android.R.drawable.ic_menu_share)
             .setContentIntent(open)

@@ -19,7 +19,7 @@ echo "==> Build Python app bundle"
 (cd "$APP_DIR" && bash build-app.sh --no-open)
 
 APP_SRC="$APP_DIR/dist/RDP Link.app"
-APP_DST="$DIST/Office RDP.app"
+APP_DST="$DIST/RDP Link.app"
 # A running copy keeps the old bundle busy and codesign then fails with
 # "Write permissions error", so stop any instance before replacing the app.
 pkill -f "$APP_DST/Contents/MacOS" >/dev/null 2>&1 || true
@@ -55,9 +55,9 @@ if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
 fi
 
 echo "==> Create DMG"
-DMG="$DIST/OfficeRDP-macos.dmg"
+DMG="$DIST/RDPLink-macos.dmg"
 rm -f "$DMG"
-hdiutil create -volname "Office RDP" -srcfolder "$APP_DST" -ov -format UDZO "$DMG"
+hdiutil create -volname "RDP Link" -srcfolder "$APP_DST" -ov -format UDZO "$DMG"
 echo "Built: $DMG"
 
 if [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then

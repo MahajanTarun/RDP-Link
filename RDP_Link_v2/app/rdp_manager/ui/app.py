@@ -8,6 +8,7 @@ import uuid
 from tkinter import ttk, messagebox, simpledialog
 
 from .. import APP_NAME, secrets, logutil
+from ..logo import LOGO_PNG
 from ..connection import ConnectionController, shell_quote_cmd
 from ..deploy import copy_setup_command, deploy_receivers
 from ..profiles import ProfileStore, normalize
@@ -28,7 +29,7 @@ class UbuntuRDPApp:
         self.root.minsize(920, 700)
 
         self._status_var = tk.StringVar(value="Ready")
-        self._office_var = tk.StringVar(value="Office ID: run office-rdp --id")
+        self._office_var = tk.StringVar(value="RDP Link ID: run office-rdp --id")
         self._office_proc = None
         self._style_ui()
         self._build_ui()
@@ -47,105 +48,128 @@ class UbuntuRDPApp:
     # -- styling -------------------------------------------------------------
 
     def _style_ui(self):
+        """Ant Design 5 light tokens mapped onto ttk."""
         style = ttk.Style(self.root)
         try:
             style.theme_use("clam")
         except tk.TclError:
             pass
 
-        bg, surface, border = "#f4f6fb", "#ffffff", "#e2e8f0"
-        text, muted, accent = "#0f172a", "#64748b", "#2563eb"
+        bg, surface = "#f5f5f5", "#ffffff"
+        border, split = "#d9d9d9", "#f0f0f0"
+        text, secondary = "#1f1f1f", "#595959"
+        primary = "#1677ff"
 
         self.root.configure(bg=bg)
         style.configure(".", background=bg, foreground=text,
                         font=("TkDefaultFont", 12))
         style.configure("TFrame", background=bg)
+        style.configure("Header.TFrame", background=surface)
         style.configure("TLabel", background=bg, foreground=text)
-        style.configure("Muted.TLabel", background=bg, foreground=muted)
-        style.configure("Title.TLabel", background=bg, foreground=text,
-                        font=("TkDefaultFont", 24, "bold"))
-        style.configure("Subtitle.TLabel", background=bg, foreground=muted,
+        style.configure("HeaderTitle.TLabel", background=surface, foreground=text,
+                        font=("TkDefaultFont", 19, "bold"))
+        style.configure("HeaderSub.TLabel", background=surface, foreground=secondary,
                         font=("TkDefaultFont", 11))
-        style.configure("TSeparator", background=border)
+        style.configure("Muted.TLabel", background=bg, foreground=secondary)
+        style.configure("TSeparator", background=split, bordercolor=split,
+                        lightcolor=split, darkcolor=split)
 
-        style.configure("Treeview", rowheight=38, font=("TkDefaultFont", 13),
+        style.configure("Treeview", rowheight=40, font=("TkDefaultFont", 12),
                         background=surface, fieldbackground=surface,
-                        foreground=text, borderwidth=0)
+                        foreground=text, borderwidth=0,
+                        bordercolor=split, lightcolor=surface, darkcolor=surface)
         style.map("Treeview",
-                  background=[("selected", "#dbeafe")],
+                  background=[("selected", "#e6f4ff")],
                   foreground=[("selected", text)])
         style.configure("Treeview.Heading", font=("TkDefaultFont", 11, "bold"),
-                        background="#f8fafc", foreground="#475569",
-                        relief="flat", padding=(8, 8))
-        style.map("Treeview.Heading", background=[("active", "#f1f5f9")])
+                        background="#fafafa", foreground=secondary,
+                        relief="flat", padding=(10, 10))
+        style.map("Treeview.Heading", background=[("active", "#f0f0f0")])
 
         style.configure("TEntry", fieldbackground=surface, foreground=text,
                         bordercolor=border, lightcolor=border, darkcolor=border,
-                        padding=(6, 5))
+                        padding=(8, 5))
+        style.map("TEntry", bordercolor=[("focus", primary)],
+                  lightcolor=[("focus", primary)], darkcolor=[("focus", primary)])
         style.configure("TCombobox", fieldbackground=surface, foreground=text,
-                        bordercolor=border, arrowcolor=muted, padding=(6, 4))
+                        bordercolor=border, arrowcolor=secondary, padding=(8, 4))
 
-        style.configure("TButton", padding=(12, 6), background=surface,
-                        foreground=text, bordercolor=border, relief="flat")
+        style.configure("TButton", padding=(15, 5), background=surface,
+                        foreground=text, bordercolor=border, relief="solid",
+                        borderwidth=1)
         style.map("TButton",
-                  background=[("pressed", "#e2e8f0"), ("active", "#f1f5f9")])
-        style.configure("Accent.TButton", background=accent, foreground="#ffffff",
-                        bordercolor=accent)
+                  foreground=[("active", primary), ("pressed", primary)],
+                  bordercolor=[("active", primary), ("pressed", primary)],
+                  background=[("pressed", "#f5f5f5"), ("active", "#ffffff")])
+        style.configure("Accent.TButton", background=primary, foreground="#ffffff",
+                        bordercolor=primary, relief="solid", borderwidth=1)
         style.map("Accent.TButton",
-                  background=[("disabled", "#bfdbfe"), ("pressed", "#1e40af"),
-                              ("active", "#1d4ed8")],
-                  foreground=[("disabled", "#ffffff")])
-        style.configure("Danger.TButton", background="#ef4444",
-                        foreground="#ffffff", bordercolor="#ef4444")
+                  background=[("disabled", "#f5f5f5"), ("pressed", "#0958d9"),
+                              ("active", "#4096ff")],
+                  foreground=[("disabled", "#bfbfbf")],
+                  bordercolor=[("disabled", border)])
+        style.configure("Danger.TButton", background=surface, foreground="#cf1322",
+                        bordercolor="#ffccc7", relief="solid", borderwidth=1)
         style.map("Danger.TButton",
-                  background=[("disabled", "#fecaca"), ("pressed", "#b91c1c"),
-                              ("active", "#dc2626")])
-
+                  background=[("disabled", "#f5f5f5"), ("pressed", "#ff4d4f"),
+                              ("active", "#ff4d4f")],
+                  foreground=[("disabled", "#bfbfbf"), ("active", "#ffffff")],
+                  bordercolor=[("active", "#ff4d4f")])
     # -- UI -------------------------------------------------------------------
 
     def _build_ui(self):
-        outer = ttk.Frame(self.root, padding=(20, 18))
-        outer.pack(fill="both", expand=True)
-
-        header = ttk.Frame(outer)
+        # Ant Design "Layout.Header": white bar + hairline divider.
+        header = tk.Frame(self.root, bg="#ffffff")
         header.pack(fill="x")
-        title_box = ttk.Frame(header)
+        header_inner = ttk.Frame(header, style="Header.TFrame", padding=(20, 12))
+        header_inner.pack(fill="x")
+        brand = ttk.Frame(header_inner, style="Header.TFrame")
+        brand.pack(side="left")
+        self._logo_img = tk.PhotoImage(data=LOGO_PNG).subsample(4)
+        tk.Label(brand, image=self._logo_img, bg="#ffffff").pack(
+            side="left", padx=(0, 12))
+        title_box = ttk.Frame(brand, style="Header.TFrame")
         title_box.pack(side="left")
-        ttk.Label(title_box, text="Office RDP", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(title_box, text="RDP Link",
+                  style="HeaderTitle.TLabel").pack(anchor="w")
         ttk.Label(title_box, text="Remote access to your own devices",
-                  style="Subtitle.TLabel").pack(anchor="w", pady=(2, 0))
-        ttk.Button(header, text="+  Add device", command=self.add_profile,
-                   style="Accent.TButton").pack(side="right", pady=(6, 0))
-        self._office_panel = OfficePanel(outer, status_callback=self.set_status)
-        self._office_panel.pack(fill="x", pady=(12, 0))
-        ttk.Separator(outer).pack(fill="x", pady=(12, 10))
+                  style="HeaderSub.TLabel").pack(anchor="w", pady=(2, 0))
+        ttk.Button(header_inner, text="+  Add device", command=self.add_profile,
+                   style="Accent.TButton").pack(side="right", pady=(2, 0))
+        tk.Frame(self.root, bg="#f0f0f0", height=1).pack(fill="x")
 
-        # Reserve the bottom bar BEFORE packing the list: the footer is
-        # anchored to the window's bottom edge, so the status bar and buttons
-        # stay visible at any window size — the list shrinks instead of
-        # pushing them off-screen.
-        footer = ttk.Frame(outer)
+        # Footer is packed before the content so it stays pinned to the
+        # bottom edge at any window size; the table shrinks instead.
+        tk.Frame(self.root, bg="#f0f0f0", height=1).pack(side="bottom", fill="x")
+        footer = tk.Frame(self.root, bg="#ffffff")
         footer.pack(side="bottom", fill="x")
-        ttk.Separator(outer).pack(side="bottom", fill="x", pady=(10, 10))
-        self._dot_canvas = tk.Canvas(footer, width=10, height=10,
-                                     highlightthickness=0)
-        self._dot_canvas.pack(side="left")
-        self._dot = self._dot_canvas.create_oval(1, 1, 9, 9, fill="#2ecc71",
-                                                 outline="")
-        ttk.Label(footer, textvariable=self._status_var,
-                  foreground="#555").pack(side="left", padx=(6, 12))
+        footer_inner = ttk.Frame(footer, style="Header.TFrame", padding=(20, 10))
+        footer_inner.pack(fill="x")
 
-        self._edit_btn = ttk.Button(footer, text="Edit…",
+        self._dot_canvas = tk.Canvas(footer_inner, width=8, height=8,
+                                     highlightthickness=0, bg="#ffffff")
+        self._dot_canvas.pack(side="left")
+        self._dot = self._dot_canvas.create_oval(1, 1, 7, 7, fill="#52c41a",
+                                                 outline="")
+        ttk.Label(footer_inner, textvariable=self._status_var,
+                  style="HeaderSub.TLabel").pack(side="left", padx=(8, 12))
+
+        self._edit_btn = ttk.Button(footer_inner, text="Edit…",
                                     command=self.edit_profile)
         self._edit_btn.pack(side="right")
-        self._disconnect_all_btn = ttk.Button(footer, text="Disconnect All",
+        self._disconnect_all_btn = ttk.Button(footer_inner, text="Disconnect All",
                                               style="Danger.TButton",
                                               command=self.disconnect_all)
         self._disconnect_all_btn.pack(side="right", padx=(0, 8))
-        self._connect_btn = ttk.Button(footer, text="Connect",
+        self._connect_btn = ttk.Button(footer_inner, text="Connect",
                                        style="Accent.TButton",
                                        command=self.toggle_selected)
         self._connect_btn.pack(side="right", padx=(0, 8))
+
+        outer = ttk.Frame(self.root, padding=(20, 16))
+        outer.pack(fill="both", expand=True)
+        self._office_panel = OfficePanel(outer, status_callback=self.set_status)
+        self._office_panel.pack(fill="x", pady=(0, 16))
 
         cols = ("name", "target", "routing", "state")
         self.tree = ttk.Treeview(outer, columns=cols, show="headings",
@@ -158,9 +182,9 @@ class UbuntuRDPApp:
         self.tree.column("target", width=230, anchor="w")
         self.tree.column("routing", width=230, anchor="w")
         self.tree.column("state", width=110, anchor="w", stretch=False)
-        self.tree.tag_configure("connected", background="#e8f7ee",
-                                foreground="#047857")
-        self.tree.tag_configure("odd", background="#f8fafc")
+        self.tree.tag_configure("connected", background="#f6ffed",
+                                foreground="#389e0d")
+        self.tree.tag_configure("odd", background="#fafafa")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<Double-1>", self._on_double_click)
         self.tree.bind("<Return>", lambda e: self.toggle_selected())
@@ -184,17 +208,17 @@ class UbuntuRDPApp:
                                command=logutil.open_log)
         self._menu.add_command(label="Check Permissions…",
                                command=self.check_permissions)
-        self._menu.add_command(label="Office RDP: Connect to host…",
+        self._menu.add_command(label="RDP Link: Connect to host…",
                                command=self.connect_office_host)
-        self._menu.add_command(label="Office RDP: Connect by Peer ID…",
+        self._menu.add_command(label="RDP Link: Connect by Peer ID…",
                                command=self.connect_office_peer_id)
-        self._menu.add_command(label="Office RDP: Browse hosts…",
+        self._menu.add_command(label="RDP Link: Browse hosts…",
                                command=self.browse_office_hosts)
-        self._menu.add_command(label="Office RDP: Open Web Guest…",
+        self._menu.add_command(label="RDP Link: Open Web Guest…",
                                command=self.open_web_guest)
-        self._menu.add_command(label="Office RDP: Generate pairing code",
+        self._menu.add_command(label="RDP Link: Generate pairing code",
                                command=self.generate_pairing_code)
-        self._menu.add_command(label="Office RDP: Wake on LAN…",
+        self._menu.add_command(label="RDP Link: Wake on LAN…",
                                command=self.wake_on_lan)
         self._menu.add_separator()
         self._menu.add_command(label="Delete", command=self.delete_profile)
@@ -431,7 +455,7 @@ class UbuntuRDPApp:
             if p:
                 return p
         candidates = [
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "..", "dist", "macos", "Office RDP.app", "Contents", "MacOS", "office-rdp"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "..", "dist", "macos", "RDP Link.app", "Contents", "MacOS", "office-rdp"),
             "/tmp/office-rdp",
         ]
         for c in candidates:
@@ -440,9 +464,9 @@ class UbuntuRDPApp:
         return None
 
     def connect_office_peer_id(self):
-        peer_id = simpledialog.askstring("Office RDP", "Peer ID (e.g. 123 456 789):")
-        rendezvous = simpledialog.askstring("Office RDP", "Rendezvous URL:")
-        password = simpledialog.askstring("Office RDP", "Password (optional):", show="*")
+        peer_id = simpledialog.askstring("RDP Link", "Peer ID (e.g. 123 456 789):")
+        rendezvous = simpledialog.askstring("RDP Link", "Rendezvous URL:")
+        password = simpledialog.askstring("RDP Link", "Password (optional):", show="*")
         if not peer_id or not rendezvous:
             return
         try:
@@ -454,30 +478,30 @@ class UbuntuRDPApp:
             if addr and not addr.startswith("http"):
                 addr = "http://" + addr
             if not addr:
-                messagebox.showerror("Office RDP", "No address for peer id")
+                messagebox.showerror("RDP Link", "No address for peer id")
                 return
             self._open_office_viewer(addr, password)
         except Exception as e:
-            messagebox.showerror("Office RDP", str(e))
+            messagebox.showerror("RDP Link", str(e))
 
     def _open_office_viewer(self, addr, password=None):
         try:
             subprocess.Popen(viewer_argv(addr, password))
         except Exception as e:
-            messagebox.showerror("Office RDP", str(e))
+            messagebox.showerror("RDP Link", str(e))
 
     def connect_office_host(self):
-        url = simpledialog.askstring("Office RDP", "Host URL (http://ip:port):")
+        url = simpledialog.askstring("RDP Link", "Host URL (http://ip:port):")
         if not url:
             return
-        password = simpledialog.askstring("Office RDP", "Password (optional):", show="*")
+        password = simpledialog.askstring("RDP Link", "Password (optional):", show="*")
         try:
             subprocess.Popen(viewer_argv(url, password))
         except Exception as e:
-            messagebox.showerror("Office RDP", str(e))
+            messagebox.showerror("RDP Link", str(e))
 
     def browse_office_hosts(self):
-        url = simpledialog.askstring("Office RDP", "Rendezvous URL:")
+        url = simpledialog.askstring("RDP Link", "Rendezvous URL:")
         if not url:
             return
         try:
@@ -485,13 +509,13 @@ class UbuntuRDPApp:
             with urllib.request.urlopen(url.rstrip("/") + "/peers") as r:
                 peers = json.load(r)
         except Exception as e:
-            messagebox.showerror("Office RDP", str(e))
+            messagebox.showerror("RDP Link", str(e))
             return
         if not peers:
-            messagebox.showinfo("Office RDP", "No hosts found.")
+            messagebox.showinfo("RDP Link", "No hosts found.")
             return
         win = tk.Toplevel(self.root)
-        win.title("Office RDP hosts")
+        win.title("RDP Link hosts")
         lb = tk.Listbox(win, width=60)
         lb.pack(fill="both", expand=True)
         for p in peers:
@@ -504,7 +528,7 @@ class UbuntuRDPApp:
             parts = line.split()
             addr = parts[-1] if parts else ""
             if not addr or addr == "None":
-                messagebox.showerror("Office RDP", "No address for host")
+                messagebox.showerror("RDP Link", "No address for host")
                 return
             if not addr.startswith("http"):
                 addr = "http://" + addr
@@ -513,36 +537,36 @@ class UbuntuRDPApp:
         ttk.Button(win, text="Connect", command=connect).pack()
 
     def open_web_guest(self):
-        url = simpledialog.askstring("Office RDP", "Rendezvous URL:")
+        url = simpledialog.askstring("RDP Link", "Rendezvous URL:")
         if not url:
             return
         import webbrowser
         webbrowser.open(url.rstrip("/") + "/client")
 
     def wake_on_lan(self):
-        mac = simpledialog.askstring("Office RDP", "MAC (aa:bb:cc:dd:ee:ff):")
+        mac = simpledialog.askstring("RDP Link", "MAC (aa:bb:cc:dd:ee:ff):")
         if not mac:
             return
         binp = self._find_office_binary()
         if not binp:
-            messagebox.showerror("Office RDP", "office-rdp binary not found")
+            messagebox.showerror("RDP Link", "office-rdp binary not found")
             return
         try:
             subprocess.Popen([binp, "--wake", mac])
             self._status_var.set(f"Wake packet sent to {mac}")
         except Exception as e:
-            messagebox.showerror("Office RDP", str(e))
+            messagebox.showerror("RDP Link", str(e))
 
     def generate_pairing_code(self):
         binp = self._find_office_binary()
         if not binp:
-            messagebox.showerror("Office RDP", "office-rdp binary not found")
+            messagebox.showerror("RDP Link", "office-rdp binary not found")
             return
         try:
             out = subprocess.check_output([binp, "--pair-code"], text=True, timeout=5).strip()
-            messagebox.showinfo("Office RDP", out)
+            messagebox.showinfo("RDP Link", out)
         except Exception as e:
-            messagebox.showerror("Office RDP", str(e))
+            messagebox.showerror("RDP Link", str(e))
 
     def stop_office_host(self):
         self._office_panel.stop_host()

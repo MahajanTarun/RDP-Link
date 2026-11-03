@@ -1,4 +1,4 @@
-# Host agent (Office RDP)
+# Host agent (RDP Link)
 
 Run:
 ```

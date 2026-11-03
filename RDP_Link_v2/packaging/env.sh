@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared toolchain paths for Office RDP.
+# Shared toolchain paths for RDP Link.
 #
 # The Wine runtime, Windows Python, alternate Go toolchain, build caches and
 # temporary files live in .build/ inside the project, on the external SSD, so
