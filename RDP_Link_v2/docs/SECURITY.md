@@ -55,6 +55,11 @@ This applies to `/register`, `/tunnel`, `/policy` and `/peers`. `/resolve` stays
 open — a guest has to resolve an ID it already knows — but it is rate limited
 to one lookup per two seconds per address.
 
+`/peers` returns the peer IDs and aliases to any signed caller. The LAN
+addresses are only returned when the request carries the relay's admin token
+(`--admin-token`, `RDPLINK_ADMIN_TOKEN`), so an unprivileged caller cannot
+map the network.
+
 ## Hardening already in place
 
 - Password comparison is constant-time on every platform.

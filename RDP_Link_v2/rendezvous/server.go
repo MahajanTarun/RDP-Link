@@ -3,6 +3,7 @@ package rendezvous
 
 import (
 	"crypto/ed25519"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,13 +32,16 @@ type PeerInfo struct {
 }
 
 type Server struct {
-	mu           sync.RWMutex
-	peers        map[string]*PeerInfo
-	conns        map[string]*websocket.Conn
-	pairs        map[string]pendingPair
-	policies     map[string]map[string]any
-	tunnels      map[string]*tunnel
-	peerKeys     map[string]ed25519.PublicKey
+	mu       sync.RWMutex
+	peers    map[string]*PeerInfo
+	conns    map[string]*websocket.Conn
+	pairs    map[string]pendingPair
+	policies map[string]map[string]any
+	tunnels  map[string]*tunnel
+	peerKeys map[string]ed25519.PublicKey
+	// adminToken unlocks the full registry listing (with the LAN addresses).
+	// Without it, /peers only returns the peer IDs and aliases.
+	adminToken   string
 	publicURL    string
 	upgrader     websocket.Upgrader
 	throttleMu   sync.Mutex
@@ -187,6 +191,9 @@ func (s *Server) List(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "signature required", http.StatusUnauthorized)
 		return
 	}
+	// The LAN addresses are only handed out to a caller that knows the
+	// admin token; everybody else sees the peer IDs and aliases only.
+	admin := s.adminAllowed(r)
 	alias := r.URL.Query().Get("alias")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -195,11 +202,27 @@ func (s *Server) List(w http.ResponseWriter, r *http.Request) {
 		if alias != "" && p.Alias != alias {
 			continue
 		}
-		out = append(out, *p)
+		item := *p
+		if !admin {
+			item.Addr = ""
+		}
+		out = append(out, item)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)
 }
+
+// adminAllowed reports whether the request carries the admin token.
+func (s *Server) adminAllowed(r *http.Request) bool {
+	if s.adminToken == "" {
+		return false
+	}
+	supplied := r.Header.Get("X-Rdp-Admin-Token")
+	return subtle.ConstantTimeCompare([]byte(supplied), []byte(s.adminToken)) == 1
+}
+
+// SetAdminToken sets the token that unlocks the full registry listing.
+func (s *Server) SetAdminToken(token string) { s.adminToken = token }
 
 func (s *Server) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	peer, ok := s.verifyPeer(r, nil)
@@ -389,8 +412,15 @@ func Run(addr string) error { return RunOptions(addr, "", "", "") }
 // RunOptions starts the server with optional TLS and a public base URL used in
 // relay links (for example https://relay.example.com).
 func RunOptions(addr, certFile, keyFile, publicURL string) error {
+	return RunOptionsWithAdmin(addr, certFile, keyFile, publicURL, "")
+}
+
+// RunOptionsWithAdmin additionally takes the token that unlocks the full
+// registry listing (with the peers' LAN addresses).
+func RunOptionsWithAdmin(addr, certFile, keyFile, publicURL, adminToken string) error {
 	s := NewServer()
 	s.publicURL = publicURL
+	s.adminToken = adminToken
 	fmt.Printf("rendezvous listening on %s\n", addr)
 	server := &http.Server{
 		Addr:              addr,

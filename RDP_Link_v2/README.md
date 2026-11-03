@@ -27,6 +27,7 @@ All surfaces use an Ant Design 5 light theme (see
 - [`docs/TESTING.md`](docs/TESTING.md) — devices, tools, methodology, how to reproduce
 - [`docs/UI-DESIGN.md`](docs/UI-DESIGN.md) — design tokens and per-surface mapping
 - [`docs/SETUP.md`](docs/SETUP.md) — one-click setup, permissions and installer automation
+- [`docs/SECURITY.md`](docs/SECURITY.md) — authentication model and hardening
 
 ## Layout
 

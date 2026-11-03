@@ -546,8 +546,18 @@ class UbuntuRDPApp:
         win.title("RDP Link hosts")
         lb = tk.Listbox(win, width=60)
         lb.pack(fill="both", expand=True)
+        rows = []
         for p in peers:
-            lb.insert("end", f"{p.get('peerId')}  {p.get('alias')}  {p.get('addr','')}")
+            addr = p.get("addr") or ""
+            rows.append((p.get("peerId", ""), p.get("alias", ""), addr))
+            lb.insert("end", f"{p.get('peerId')}  {p.get('alias')}  {addr}")
+        if rows and not any(addr for _pid, _alias, addr in rows):
+            ttk.Label(
+                win,
+                text="The rendezvous hides the addresses unless the admin token "
+                     "(RDPLINK_ADMIN_TOKEN) is set.",
+                wraplength=380, justify="left",
+            ).pack(fill="x", padx=8, pady=4)
         def connect():
             sel = lb.curselection()
             if not sel:

@@ -20,6 +20,11 @@ rendezvous server, and guests reach it at
 # Plain HTTP (LAN/testing only)
 office-rdp-rendezvous --listen :8080 --public-url http://192.168.1.14:8080
 
+# With an admin token: the full registry (including the LAN addresses) is
+# only handed out to callers that know the token.
+RDPLINK_ADMIN_TOKEN=$(openssl rand -hex 16) \
+  office-rdp-rendezvous --listen :8080 --public-url http://192.168.1.14:8080
+
 # TLS (required for WAN)
 office-rdp-rendezvous --listen :443 \
   --tls-cert /etc/letsencrypt/live/relay.example.com/fullchain.pem \
@@ -83,7 +88,7 @@ the app resolves it to the relay URL automatically.
 | Request size | 32 MiB per request/response over the relay |
 | Concurrency | Up to 6 in-flight requests per host |
 | Auth | Host password still enforced end-to-end by the host; the relay only accepts signed requests from the host |
-| Registry | `/peers` needs a signed request (`office-rdp --list-peers <relay>`); `/resolve` is open but rate limited |
+| Registry | `/peers` needs a signed request (`office-rdp --list-peers <relay>`) and only reveals the LAN addresses when the admin token is presented; `/resolve` is open but rate limited |
 | Encryption | TLS between host↔relay and guest↔relay; the relay terminates TLS |
 | Multiple hosts | One tunnel per peer ID; a second connection is rejected |
 

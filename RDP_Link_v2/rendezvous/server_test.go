@@ -190,6 +190,49 @@ func TestPolicyIsPerPeer(t *testing.T) {
 	}
 }
 
+func TestListHidesAddressesWithoutAdminToken(t *testing.T) {
+	s := NewServer()
+	s.SetAdminToken("s3cret")
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+	peer := newTestPeer(t)
+	body := []byte(`{"peerId":"` + peer.id + `","alias":"a","addr":"192.168.1.5:8088"}`)
+	resp, err := http.DefaultClient.Do(peer.signed(t, http.MethodPost, ts.URL+"/register", body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	// Without the admin token the LAN address stays hidden.
+	r, err := http.DefaultClient.Do(peer.signed(t, http.MethodGet, ts.URL+"/peers", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []PeerInfo
+	json.NewDecoder(r.Body).Decode(&out)
+	r.Body.Close()
+	if len(out) != 1 {
+		t.Fatalf("list len %d", len(out))
+	}
+	if out[0].Addr != "" {
+		t.Fatalf("address leaked without the admin token: %q", out[0].Addr)
+	}
+
+	// With the admin token it is returned.
+	req := peer.signed(t, http.MethodGet, ts.URL+"/peers", nil)
+	req.Header.Set("X-Rdp-Admin-Token", "s3cret")
+	r2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out2 []PeerInfo
+	json.NewDecoder(r2.Body).Decode(&out2)
+	r2.Body.Close()
+	if len(out2) != 1 || out2[0].Addr != "192.168.1.5:8088" {
+		t.Fatalf("admin listing failed: %+v", out2)
+	}
+}
+
 func TestHeartbeatNeedsSignature(t *testing.T) {
 	s := NewServer()
 	ts := httptest.NewServer(s)

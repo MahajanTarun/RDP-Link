@@ -136,6 +136,13 @@ func RequestURI(rawURL string) (string, error) {
 // Send performs a signed HTTP request against the rendezvous.
 func Send(client *http.Client, method, rawURL string, body []byte,
 	priv ed25519.PrivateKey, contentType string) (*http.Response, error) {
+	return SendWith(client, method, rawURL, body, priv, contentType, nil)
+}
+
+// SendWith performs a signed request and adds extra headers (for example the
+// relay's admin token).
+func SendWith(client *http.Client, method, rawURL string, body []byte,
+	priv ed25519.PrivateKey, contentType string, extra map[string]string) (*http.Response, error) {
 	uri, err := RequestURI(rawURL)
 	if err != nil {
 		return nil, err
@@ -146,6 +153,9 @@ func Send(client *http.Client, method, rawURL string, body []byte,
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	for name, value := range extra {
+		req.Header.Set(name, value)
 	}
 	Apply(req.Header, priv, method, uri, Timestamp(), body)
 	return client.Do(req)

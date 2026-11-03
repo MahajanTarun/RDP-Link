@@ -69,6 +69,8 @@ func main() {
 		"read the unattended password from a file (keeps it out of the process list)")
 	listPeers := flag.String("list-peers", "",
 		"list the peers registered with a rendezvous server")
+	adminToken := flag.String("admin-token", "",
+		"admin token for the rendezvous (also read from RDPLINK_ADMIN_TOKEN)")
 	readOnly := flag.Bool("read-only", false, "disable remote input (view-only)")
 	rendezvous := flag.String("rendezvous", "", "rendezvous base URL (e.g. http://host:8080)")
 	list := flag.Bool("list", false, "list peers")
@@ -104,8 +106,16 @@ func main() {
 		// Listing the registry needs a signed request, so the launcher calls
 		// the agent instead of fetching the list itself.
 		client := relayHTTPClient(*relayInsecure, *relayCA)
-		resp, err := peerauth.Send(client, http.MethodGet,
-			strings.TrimRight(*listPeers, "/")+"/peers", nil, id.PrivateKey, "")
+		token := *adminToken
+		if token == "" {
+			token = strings.TrimSpace(os.Getenv("RDPLINK_ADMIN_TOKEN"))
+		}
+		var extra map[string]string
+		if token != "" {
+			extra = map[string]string{"X-Rdp-Admin-Token": token}
+		}
+		resp, err := peerauth.SendWith(client, http.MethodGet,
+			strings.TrimRight(*listPeers, "/")+"/peers", nil, id.PrivateKey, "", extra)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "list-peers:", err)
 			os.Exit(1)

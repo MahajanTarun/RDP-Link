@@ -369,6 +369,13 @@ class HostService : Service() {
             val expected = password
             val supplied = session.headers["x-office-password"]
                 ?: session.parameters["password"]?.firstOrNull()
+                ?: bodyText(session).takeIf { it.isNotEmpty() }?.let {
+                    try {
+                        JSONObject(it).optString("password")
+                    } catch (_: Exception) {
+                        ""
+                    }
+                }
                 ?: ""
             if (expected.isEmpty() || !constantEquals(expected, supplied)) {
                 return newFixedLengthResponse(
