@@ -222,6 +222,14 @@
                     android:layout_marginTop="14dp"
                     android:text="Enable remote control (accessibility)" />
 
+                <Button
+                    android:id="@+id/setupBtn"
+                    style="@style/OfficeButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Setup &amp; permissions" />
+
                 <TextView
                     android:id="@+id/status"
                     android:layout_width="wrap_content"

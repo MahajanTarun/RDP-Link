@@ -15,6 +15,13 @@ mkdir -p "$DIST/bin"
 (cd "$ROOT" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o "$DIST/bin/office-rdp-rendezvous-arm64" ./cmd/rendezvous)
 (cd "$ROOT" && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o "$DIST/bin/office-rdp-rendezvous-amd64" ./cmd/rendezvous)
 
+echo "==> Build permission helper (TCC)"
+if command -v swiftc >/dev/null 2>&1; then
+  swiftc -O -o "$APP_DIR/assets/rdp-link-tcc" "$ROOT/macos/tcc-helper.swift"
+else
+  echo "warning: swiftc not found; the setup assistant will use deep links only"
+fi
+
 echo "==> Build Python app bundle"
 (cd "$APP_DIR" && bash build-app.sh --no-open)
 
@@ -30,6 +37,9 @@ cp -R "$APP_SRC" "$APP_DST"
 echo "==> Inject Go binaries"
 mkdir -p "$APP_DST/Contents/MacOS/tools"
 cp "$DIST/bin/"* "$APP_DST/Contents/MacOS/tools/"
+cp "$APP_DIR/assets/rdp-link-tcc" "$APP_DST/Contents/MacOS/tools/" 2>/dev/null || true
+cp "$APP_DIR/assets/rdp-link-tcc" "$DIST/bin/" 2>/dev/null || true
+chmod +x "$APP_DST/Contents/MacOS/tools/rdp-link-tcc" 2>/dev/null || true
 
 echo "==> Create universal-ish launcher wrapper (arch select)"
 cat > "$APP_DST/Contents/MacOS/office-rdp" <<'SH'

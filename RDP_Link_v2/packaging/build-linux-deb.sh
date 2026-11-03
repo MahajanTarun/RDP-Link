@@ -22,7 +22,23 @@ Architecture: ${arch}
 Maintainer: RDP Link <root@example.com>
 Description: Cross-platform desktop sharing agent and viewer
 Depends: libc6, libx11-6, libxext6, libxrandr2, libxinerama1, libxcursor1, libxi6, libxtst6
+Recommends: ffmpeg, v4l2loopback-dkms, usbip
 PCONTROL
+  cat > "$art/DEBIAN/postinst" <<'PPOSTINST'
+#!/bin/sh
+set -e
+# Optional device modules; failures are harmless (not installed / Secure Boot).
+modprobe v4l2loopback video_nr=10 card_label="RDP Link Camera" 2>/dev/null || true
+modprobe usbip-host 2>/dev/null || true
+# Remote input needs write access to /dev/uinput for the desktop user.
+if [ -e /dev/uinput ]; then
+  getent group input >/dev/null 2>&1 || groupadd -r input 2>/dev/null || true
+  printf 'KERNEL=="uinput", MODE="0660", GROUP="input"\n' > /etc/udev/rules.d/60-rdp-link-uinput.rules
+  udevadm control --reload 2>/dev/null || true
+fi
+exit 0
+PPOSTINST
+  chmod 0755 "$art/DEBIAN/postinst"
   install -m 0755 "$DIST/bin/office-rdp-linux-${arch}" "$art/usr/bin/office-rdp"
   install -m 0755 "$DIST/bin/office-rdp-rendezvous-linux-${arch}" "$art/usr/bin/office-rdp-rendezvous"
   if [[ -f "$DIST/bin/rdp-link-${arch}" ]]; then

@@ -16,6 +16,7 @@ from ..viewer_launch import viewer_argv
 from .dialogs import PasswordPrompt
 from .editor import ProfileEditor
 from .office_panel import OfficePanel
+from .setup import SetupDialog
 
 class UbuntuRDPApp:
     def __init__(self):
@@ -134,6 +135,8 @@ class UbuntuRDPApp:
                   style="HeaderTitle.TLabel").pack(anchor="w")
         ttk.Label(title_box, text="Remote access to your own devices",
                   style="HeaderSub.TLabel").pack(anchor="w", pady=(2, 0))
+        ttk.Button(header_inner, text="Setup", command=self.open_setup).pack(
+            side="right", padx=(0, 8), pady=(2, 0))
         ttk.Button(header_inner, text="+  Add device", command=self.add_profile,
                    style="Accent.TButton").pack(side="right", pady=(2, 0))
         tk.Frame(self.root, bg="#f0f0f0", height=1).pack(fill="x")
@@ -297,6 +300,9 @@ class UbuntuRDPApp:
                  else "#f39c12" if warn
                  else "#2ecc71")
         self._dot_canvas.itemconfig(self._dot, fill=color)
+
+    def open_setup(self):
+        SetupDialog(self.root)
 
     # -- actions -----------------------------------------------------------------
 

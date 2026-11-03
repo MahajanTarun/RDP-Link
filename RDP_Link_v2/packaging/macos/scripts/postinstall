@@ -1,0 +1,21 @@
+#!/bin/bash
+# RDP Link installer: allow the host through the Application Firewall and
+# install the login service for the console user. Privacy permissions still
+# require the user's one-time approval (macOS rule); the Setup assistant
+# guides that after launch.
+set -e
+
+APP="/Applications/RDP Link.app"
+AGENT="$APP/Contents/MacOS/office-rdp"
+
+if [ -x "$AGENT" ]; then
+  /usr/libexec/ApplicationFirewall/socketfilterfw --add "$AGENT" >/dev/null 2>&1 || true
+  /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp "$AGENT" >/dev/null 2>&1 || true
+fi
+
+CONSOLE_USER="$(stat -f%Su /dev/console)"
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ -x "$AGENT" ]; then
+  sudo -u "$CONSOLE_USER" "$AGENT" --install-service >/dev/null 2>&1 || true
+fi
+
+exit 0

@@ -2,6 +2,7 @@ package com.eminentailabs.officerdp
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -19,7 +20,9 @@ import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ListView
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.net.HttpURLConnection
@@ -101,6 +104,7 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             toast("Enable RDP Link remote control")
         }
+        findViewById<Button>(R.id.setupBtn).setOnClickListener { showSetup() }
 
         advancedToggle.setOnClickListener {
             val open = advancedPanel.visibility != View.VISIBLE
@@ -149,6 +153,112 @@ class MainActivity : Activity() {
             passwordView.setText(randomPassword())
             saveSettings()
         }
+    }
+
+    // -- setup ---------------------------------------------------------------
+    private fun showSetup() {
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Setup & permissions")
+            .setNegativeButton("Close", null)
+            .create()
+
+        val scroll = ScrollView(this)
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(20), dp(12), dp(20), dp(12))
+        scroll.addView(col)
+
+        fun addRow(title: String, detail: String, ok: Boolean, action: String,
+                   onClick: (() -> Unit)?) {
+            val card = LinearLayout(this)
+            card.orientation = LinearLayout.VERTICAL
+            card.setPadding(dp(4), dp(12), dp(4), dp(12))
+            val head = LinearLayout(this)
+            head.orientation = LinearLayout.HORIZONTAL
+            head.gravity = android.view.Gravity.CENTER_VERTICAL
+            val name = TextView(this)
+            name.text = title
+            name.textSize = 15f
+            name.setTextColor(resources.getColor(R.color.antd_text, theme))
+            name.setTypeface(null, android.graphics.Typeface.BOLD)
+            name.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            val tag = TextView(this)
+            tag.text = if (ok) "Ready" else "Action needed"
+            tag.textSize = 12f
+            tag.setTextColor(resources.getColor(
+                if (ok) R.color.antd_success_text else R.color.antd_warning_text, theme))
+            tag.setBackgroundResource(
+                if (ok) R.drawable.bg_tag_success else R.drawable.bg_tag_neutral)
+            tag.setPadding(dp(8), dp(2), dp(8), dp(2))
+            head.addView(name)
+            head.addView(tag)
+            card.addView(head)
+            val sub = TextView(this)
+            sub.text = detail
+            sub.textSize = 12f
+            sub.setTextColor(resources.getColor(R.color.antd_text_secondary, theme))
+            sub.setPadding(0, dp(4), 0, 0)
+            card.addView(sub)
+            if (onClick != null) {
+                val button = Button(this, null, 0, R.style.OfficeButton)
+                button.text = action
+                button.layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT)
+                button.setPadding(dp(14), dp(4), dp(14), dp(4))
+                val wrap = LinearLayout(this)
+                wrap.setPadding(0, dp(8), 0, 0)
+                wrap.addView(button)
+                button.setOnClickListener { dialog.dismiss(); onClick() }
+                card.addView(wrap)
+            }
+            val divider = View(this)
+            divider.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+            divider.setBackgroundColor(resources.getColor(R.color.antd_border_secondary, theme))
+            col.addView(card)
+            col.addView(divider)
+        }
+
+        val a11y = InputAccessibilityService.instance != null || accessibilityServiceEnabled()
+        addRow("Remote control (accessibility)",
+            if (a11y) "Enabled — taps and keys can be injected"
+            else "Needed to control this device from a guest",
+            a11y, "Open settings") {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
+        val notif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        } else true
+        addRow("Notifications",
+            if (notif) "Allowed — sharing status stays visible"
+            else "The foreground service needs notification permission",
+            notif, "Allow") {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    NOTIFICATION_REQUEST)
+            }
+        }
+
+        val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+        val battery = pm.isIgnoringBatteryOptimizations(packageName)
+        addRow("Battery optimisation",
+            if (battery) "Exempt — long sessions keep running"
+            else "Exempt RDP Link to avoid the OS pausing the host",
+            battery, "Open settings") {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+
+        addRow("Screen capture",
+            "Android asks for approval every time you start sharing. This is an OS security rule and cannot be pre-granted.",
+            true, "", null)
+
+        dialog.setView(scroll)
+        dialog.show()
     }
 
     // -- recents -------------------------------------------------------------
