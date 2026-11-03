@@ -2,13 +2,17 @@
 package rendezvous
 
 import (
+	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/eminentailabs/office-rdp/core/peerauth"
 	"github.com/gorilla/websocket"
 )
 
@@ -33,16 +37,78 @@ type Server struct {
 	pairs        map[string]pendingPair
 	policies     map[string]map[string]any
 	tunnels      map[string]*tunnel
-	tunnelTokens map[string]string
+	peerKeys     map[string]ed25519.PublicKey
 	publicURL    string
 	upgrader     websocket.Upgrader
+	throttleMu   sync.Mutex
+	resolveCalls map[string]time.Time
 }
 
 func NewServer() *Server {
 	return &Server{peers: map[string]*PeerInfo{}, conns: map[string]*websocket.Conn{},
 		pairs: map[string]pendingPair{}, policies: map[string]map[string]any{},
-		tunnels: map[string]*tunnel{}, tunnelTokens: map[string]string{},
-		upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}}
+		tunnels: map[string]*tunnel{}, peerKeys: map[string]ed25519.PublicKey{},
+		resolveCalls: map[string]time.Time{},
+		upgrader:     websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}}
+}
+
+// verifyPeer authenticates a signed request. It returns the peer ID the
+// request is allowed to act as.
+//
+// The peer ID is derived from the public key, so a valid signature can only
+// ever claim the peer ID that belongs to that key. The first key seen for a
+// peer ID is pinned: a later request with a different key is rejected, which
+// stops an attacker from re-registering somebody else's peer ID once they
+// learn it.
+func (s *Server) verifyPeer(r *http.Request, body []byte) (string, bool) {
+	peer := normalizeID(r.Header.Get(peerauth.HeaderPeer))
+	timestamp := r.Header.Get(peerauth.HeaderTimestamp)
+	pubValue := r.Header.Get(peerauth.HeaderPublicKey)
+	signature := r.Header.Get(peerauth.HeaderSignature)
+	if peer == "" || timestamp == "" || pubValue == "" || signature == "" {
+		return "", false
+	}
+	if !peerauth.CheckTimestamp(timestamp) {
+		return "", false
+	}
+	pub, err := peerauth.ParsePublicKey(pubValue)
+	if err != nil {
+		return "", false
+	}
+	if peerauth.PeerID(pub) != peer {
+		return "", false
+	}
+	if !peerauth.Verify(pub, r.Method, r.URL.RequestURI(), timestamp, body, signature) {
+		return "", false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if known, ok := s.peerKeys[peer]; ok && !known.Equal(pub) {
+		return "", false
+	}
+	s.peerKeys[peer] = pub
+	return peer, true
+}
+
+// resolveAllowed throttles the unauthenticated /resolve endpoint so the peer
+// registry cannot be enumerated by brute force.
+func (s *Server) resolveAllowed(ip string) bool {
+	s.throttleMu.Lock()
+	defer s.throttleMu.Unlock()
+	now := time.Now()
+	last, ok := s.resolveCalls[ip]
+	if ok && now.Sub(last) < 2*time.Second {
+		return false
+	}
+	if len(s.resolveCalls) > 4096 {
+		for key, when := range s.resolveCalls {
+			if now.Sub(when) > time.Minute {
+				delete(s.resolveCalls, key)
+			}
+		}
+	}
+	s.resolveCalls[ip] = now
+	return true
 }
 
 func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
@@ -50,16 +116,23 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method", http.StatusMethodNotAllowed)
 		return
 	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+	peer, ok := s.verifyPeer(r, body)
+	if !ok {
+		http.Error(w, "signature required", http.StatusUnauthorized)
+		return
+	}
 	var info PeerInfo
-	if err := json.NewDecoder(r.Body).Decode(&info); err != nil {
+	if err := json.Unmarshal(body, &info); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if info.PeerID == "" {
-		http.Error(w, "peerId required", http.StatusBadRequest)
-		return
-	}
-	info.PeerID = normalizeID(info.PeerID)
+	// The peer ID always comes from the signature, never from the payload.
+	info.PeerID = peer
 	info.LastSeen = time.Now()
 	if info.Status == "" {
 		info.Status = "online"
@@ -78,6 +151,12 @@ func (s *Server) Resolve(w http.ResponseWriter, r *http.Request) {
 		id = r.URL.Path[len("/resolve/"):]
 	}
 	id = normalizeID(id)
+	// Guests resolve a peer ID they already know, so this endpoint stays
+	// open; it is rate limited to stop the registry being enumerated.
+	if !s.resolveAllowed(clientIP(r)) {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
 	s.mu.RLock()
 	p, ok := s.peers[id]
 	s.mu.RUnlock()
@@ -103,6 +182,11 @@ func (s *Server) Resolve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) List(w http.ResponseWriter, r *http.Request) {
+	// Listing the registry requires a signed request from a known identity.
+	if _, ok := s.verifyPeer(r, nil); !ok {
+		http.Error(w, "signature required", http.StatusUnauthorized)
+		return
+	}
 	alias := r.URL.Query().Get("alias")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -118,49 +202,17 @@ func (s *Server) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Heartbeat(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("peerId")
+	peer, ok := s.verifyPeer(r, nil)
+	if !ok {
+		http.Error(w, "signature required", http.StatusUnauthorized)
+		return
+	}
 	s.mu.Lock()
-	if p, ok := s.peers[id]; ok {
+	if p, ok := s.peers[peer]; ok {
 		p.LastSeen = time.Now()
 	}
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) Signal(w http.ResponseWriter, r *http.Request) {
-	peerID := r.URL.Query().Get("peerId")
-	conn, err := s.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		return
-	}
-	s.mu.Lock()
-	s.conns[peerID] = conn
-	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		delete(s.conns, peerID)
-		s.mu.Unlock()
-		conn.Close()
-	}()
-	for {
-		_, msg, err := conn.ReadMessage()
-		if err != nil {
-			return
-		}
-		// parse target
-		var m struct {
-			To string `json:"to"`
-		}
-		_ = json.Unmarshal(msg, &m)
-		if m.To != "" {
-			s.mu.RLock()
-			target, ok := s.conns[m.To]
-			s.mu.RUnlock()
-			if ok {
-				_ = target.WriteMessage(websocket.TextMessage, msg)
-			}
-		}
-	}
 }
 
 // pairing state
@@ -234,29 +286,53 @@ func (s *Server) PairVerify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) SetPolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+	peer, ok := s.verifyPeer(r, body)
+	if !ok {
+		http.Error(w, "signature required", http.StatusUnauthorized)
+		return
+	}
 	var req struct {
 		PeerID string         `json:"peerId"`
 		Policy map[string]any `json:"policy"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if req.PeerID == "" {
-		http.Error(w, "peerId required", http.StatusBadRequest)
+	// A peer may only change its own policy.
+	if req.PeerID != "" && normalizeID(req.PeerID) != peer {
+		http.Error(w, "cannot set another peer's policy", http.StatusForbidden)
 		return
 	}
 	s.mu.Lock()
-	s.policies[req.PeerID] = req.Policy
+	s.policies[peer] = req.Policy
 	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func (s *Server) GetPolicy(w http.ResponseWriter, r *http.Request) {
+	peer, ok := s.verifyPeer(r, nil)
+	if !ok {
+		http.Error(w, "signature required", http.StatusUnauthorized)
+		return
+	}
 	id := r.URL.Query().Get("peerId")
+	if id != "" && normalizeID(id) != peer {
+		http.Error(w, "cannot read another peer's policy", http.StatusForbidden)
+		return
+	}
 	s.mu.RLock()
-	p, ok := s.policies[id]
+	p, ok := s.policies[peer]
 	s.mu.RUnlock()
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -280,8 +356,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.List(w, r)
 	case r.URL.Path == "/heartbeat":
 		s.Heartbeat(w, r)
-	case r.URL.Path == "/signal":
-		s.Signal(w, r)
 	case r.URL.Path == "/pair/start" && r.Method == http.MethodPost:
 		s.PairStart(w, r)
 	case r.URL.Path == "/pair/verify" && r.Method == http.MethodPost:
@@ -298,6 +372,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// clientIP returns the address of the caller.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // Run starts the HTTP server.
@@ -325,42 +408,26 @@ func RunOptions(addr, certFile, keyFile, publicURL string) error {
 	return server.ListenAndServe()
 }
 
+// clientHTML is a small landing page for the relay itself. The guest UI is
+// served by the host through the tunnel at /t/<peerId>/.
 const clientHTML = `<!DOCTYPE html>
-<html><body style="margin:0;background:#111;color:#eee;font-family:sans-serif">
-<h3 style="margin:8px">RDP Link Web Guest</h3>
-<input id="host" placeholder="Host Peer ID" style="margin:8px" />
-<button onclick="connect()">Connect</button>
-<video id="v" autoplay playsinline style="max-width:100%;max-height:85vh;display:block;margin:auto;background:#000"></video>
-<script>
-let ws, pc, dc, guestId = 'guest-' + Math.random().toString(36).slice(2);
-function connect(){
-  const hostId = document.getElementById('host').value.trim();
-  const base = location.origin.replace('http','ws');
-  ws = new WebSocket(base + '/signal?peerId=' + encodeURIComponent(guestId));
-  ws.onmessage = async (ev) => {
-    const m = JSON.parse(ev.data);
-    if(m.type === 'answer'){
-      await pc.setRemoteDescription(new RTCSessionDescription({type:'answer',sdp:m.sdp}));
-    } else if(m.type === 'ice'){
-      try { await pc.addIceCandidate({candidate:m.candidate}); } catch(e){}
-    }
-  };
-  pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-  pc.ontrack = (e) => { document.getElementById('v').srcObject = e.streams[0]; };
-  pc.onicecandidate = (e) => {
-    if(e.candidate) ws.send(JSON.stringify({type:'ice',from:guestId,to:hostId,candidate:e.candidate.candidate}));
-  };
-  dc = pc.createDataChannel('input');
-  const pwd = prompt('Password (if required):') || '';
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  ws.onopen = () => {
-    ws.send(JSON.stringify({type:'offer',from:guestId,to:hostId,sdp:offer.sdp,password:pwd}));
-  };
-  // send input
-  document.addEventListener('mousemove', (e) => {
-    if(dc && dc.readyState === 'open') dc.send(JSON.stringify({type:'move',x:e.clientX,y:e.clientY}));
-  });
-}
-</script>
-</body></html>`
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RDP Link relay</title>
+<style>
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:#f5f5f5; color:rgba(0,0,0,.88);
+         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .card { background:#fff; border:1px solid #f0f0f0; border-radius:8px; padding:28px 32px;
+          max-width:460px; box-shadow:0 6px 16px rgba(0,0,0,.08); }
+  h1 { font-size:19px; margin:0 0 8px; }
+  p { font-size:14px; color:rgba(0,0,0,.65); line-height:1.5715; margin:0 0 12px; }
+  code { background:#fafafa; border:1px solid #f0f0f0; border-radius:4px; padding:1px 6px; }
+</style></head>
+<body><div class="card">
+<h1>RDP Link relay</h1>
+<p>This server connects RDP Link peers that are behind NAT or on a changing
+   public IP. A guest opens the host link that the host shows, for example
+   <code>/t/123456789/</code>.</p>
+<p>Use the RDP Link app, the desktop viewer or any browser to open that link.</p>
+</div></body></html>`

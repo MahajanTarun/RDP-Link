@@ -7,6 +7,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -18,8 +20,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// upgrader only accepts WebSocket handshakes from this host's own pages.
+// Native clients (no Origin header) are still allowed, but a web page on
+// another site cannot open a device bridge.
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(*http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool { return sameOrigin(r) },
 }
 
 // Device bridge: audio, camera, serial and allow-listed TCP ports. Everything
@@ -355,39 +360,52 @@ func (a *Agent) handlePortProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "port not allowed", http.StatusForbidden)
 		return
 	}
-	target := "http://127.0.0.1:" + strconv.Itoa(port) + "/" + tail
-	if r.URL.RawQuery != "" {
-		target += "?" + r.URL.RawQuery
+	// A reverse proxy keeps cookies, redirects and relative assets working,
+	// which a hand-rolled copy did not.
+	prefix := "/port/" + portStr
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			// #nosec G704 -- the destination is always 127.0.0.1 and a port
+			// that was explicitly allow-listed with --forward.
+			pr.Out.URL.Scheme = "http"
+			pr.Out.URL.Host = "127.0.0.1:" + portStr
+			pr.Out.URL.Path = "/" + strings.TrimPrefix(tail, "/")
+			pr.Out.URL.RawPath = ""
+			pr.SetXForwarded()
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			if loc := resp.Header.Get("Location"); loc != "" {
+				if u, err := url.Parse(loc); err == nil {
+					if u.IsAbs() {
+						u.Path = prefix + "/" + strings.TrimPrefix(u.Path, "/")
+						u.RawPath = ""
+						u.Host = ""
+						u.Scheme = ""
+					} else if strings.HasPrefix(u.Path, "/") {
+						u.Path = prefix + u.Path
+						u.RawPath = ""
+					}
+					resp.Header.Set("Location", u.String())
+				}
+			}
+			if cookies := resp.Header.Values("Set-Cookie"); len(cookies) > 0 {
+				resp.Header.Del("Set-Cookie")
+				for _, raw := range cookies {
+					cookie, err := http.ParseSetCookie(raw)
+					if err != nil {
+						resp.Header.Add("Set-Cookie", raw)
+						continue
+					}
+					if cookie.Path == "" || cookie.Path == "/" {
+						cookie.Path = prefix + "/"
+					}
+					resp.Header.Add("Set-Cookie", cookie.String())
+				}
+			}
+			return nil
+		},
 	}
-	// #nosec G704 -- the destination is always 127.0.0.1 and a port that was
-	// explicitly allow-listed with --forward.
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, target, r.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	for _, h := range []string{"Content-Type", "Accept", "Accept-Language"} {
-		if v := r.Header.Get(h); v != "" {
-			req.Header.Set(h, v)
-		}
-	}
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req) // #nosec G704 -- loopback + allow-listed port
-	if err != nil {
-		http.Error(w, "upstream unavailable", http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-	for k, v := range resp.Header {
-		if k == "Content-Length" || k == "Transfer-Encoding" || k == "Connection" {
-			continue
-		}
-		for _, item := range v {
-			w.Header().Add(k, item)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	proxy.ServeHTTP(w, r)
 }
 
 // ---- guest camera -> host virtual camera (v4l2loopback) -------------------

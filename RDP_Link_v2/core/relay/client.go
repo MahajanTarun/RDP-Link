@@ -4,11 +4,11 @@ package relay
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"context"
+	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,27 +20,27 @@ import (
 	"sync"
 	"time"
 
+	"github.com/eminentailabs/office-rdp/core/peerauth"
 	"github.com/gorilla/websocket"
 )
 
 const maxBody = 32 << 20
 
-// Token derives the tunnel credential from the peer ID and access password.
-// The rendezvous stores the first token it sees for a peer ID, so a guest
-// cannot take over someone else's tunnel without knowing the password.
-func Token(peerID, password string) string {
-	sum := sha256.Sum256([]byte("rdp-link-tunnel:" + peerID + ":" + password))
-	return hex.EncodeToString(sum[:])
-}
-
 // Client maintains the tunnel connection.
 type Client struct {
 	Rendezvous string
 	PeerID     string
-	Password   string
+	// PrivateKey signs the tunnel handshake. The peer ID is derived from
+	// this key, so the rendezvous can verify that the host owns the peer ID
+	// it claims.
+	PrivateKey ed25519.PrivateKey
 	LocalPort  int
 	Insecure   bool
 	CAFile     string
+	// Secret proves to the local host agent that a forwarded request really
+	// came from this process. Only requests carrying it may set
+	// X-Forwarded-For.
+	Secret string
 }
 
 type request struct {
@@ -51,6 +51,7 @@ type request struct {
 	Headers map[string]string `json:"headers"`
 	Body    string            `json:"body"`
 	Stream  bool              `json:"stream,omitempty"`
+	Cancel  bool              `json:"cancel,omitempty"`
 }
 
 type reply struct {
@@ -77,10 +78,11 @@ func (c *Client) Run() {
 	}
 }
 
-func (c *Client) wsURL() (string, error) {
+// wsURL builds the tunnel URL and the signature that covers it.
+func (c *Client) wsURL() (string, http.Header, error) {
 	u, err := url.Parse(c.Rendezvous)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	switch u.Scheme {
 	case "https":
@@ -91,13 +93,19 @@ func (c *Client) wsURL() (string, error) {
 	u.Path = strings.TrimRight(u.Path, "/") + "/tunnel"
 	q := u.Query()
 	q.Set("peerId", c.PeerID)
-	q.Set("token", Token(c.PeerID, c.Password))
 	u.RawQuery = q.Encode()
-	return u.String(), nil
+
+	header := http.Header{}
+	if len(c.PrivateKey) == ed25519.PrivateKeySize {
+		timestamp := peerauth.Timestamp()
+		uri := u.RequestURI()
+		peerauth.Apply(header, c.PrivateKey, http.MethodGet, uri, timestamp, nil)
+	}
+	return u.String(), header, nil
 }
 
 func (c *Client) connectOnce() error {
-	target, err := c.wsURL()
+	target, header, err := c.wsURL()
 	if err != nil {
 		return err
 	}
@@ -119,7 +127,7 @@ func (c *Client) connectOnce() error {
 		}
 		dialer.TLSClientConfig = tlsConfig
 	}
-	conn, resp, err := dialer.Dial(target, http.Header{})
+	conn, resp, err := dialer.Dial(target, header)
 	if err != nil {
 		if resp != nil {
 			return fmt.Errorf("dial %s: %w (%s)", target, err, resp.Status)
@@ -151,6 +159,17 @@ func (c *Client) connectOnce() error {
 	}()
 	defer close(done)
 
+	// Streams that are still running, so the guest can cancel them.
+	var streamMu sync.Mutex
+	streams := map[string]context.CancelFunc{}
+	defer func() {
+		streamMu.Lock()
+		for _, cancel := range streams {
+			cancel()
+		}
+		streamMu.Unlock()
+	}()
+
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
@@ -159,6 +178,16 @@ func (c *Client) connectOnce() error {
 		}
 		var req request
 		if json.Unmarshal(data, &req) != nil || req.ID == "" {
+			continue
+		}
+		if req.Cancel {
+			streamMu.Lock()
+			cancel := streams[req.ID]
+			delete(streams, req.ID)
+			streamMu.Unlock()
+			if cancel != nil {
+				cancel()
+			}
 			continue
 		}
 		sem <- struct{}{}
@@ -171,7 +200,15 @@ func (c *Client) connectOnce() error {
 				writeMu.Unlock()
 			}
 			if req.Stream {
-				c.stream(req, send)
+				ctx, cancel := context.WithCancel(context.Background())
+				streamMu.Lock()
+				streams[req.ID] = cancel
+				streamMu.Unlock()
+				c.stream(ctx, req, send)
+				streamMu.Lock()
+				delete(streams, req.ID)
+				streamMu.Unlock()
+				cancel()
 				return
 			}
 			send(c.execute(req))
@@ -179,29 +216,48 @@ func (c *Client) connectOnce() error {
 	}
 }
 
+// applyHeaders copies the tunnelled request headers and marks the request as
+// coming from this process.
+func (c *Client) applyHeaders(dst http.Header, src map[string]string) {
+	for k, v := range src {
+		if strings.EqualFold(k, "x-rdp-relay-secret") {
+			// Never trust a forwarded secret.
+			continue
+		}
+		dst.Set(k, v)
+	}
+	if c.Secret != "" {
+		dst.Set("X-Rdp-Relay-Secret", c.Secret)
+	}
+}
+
 // stream forwards an incremental response (audio/MJPEG) as frames.
-func (c *Client) stream(req request, send func(reply)) {
+func (c *Client) stream(ctx context.Context, req request, send func(reply)) {
 	target := fmt.Sprintf("http://127.0.0.1:%d%s", c.LocalPort, req.Path)
 	if req.Query != "" {
 		target += "?" + req.Query
 	}
-	httpReq, err := http.NewRequest(req.Method, target, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, target, nil)
 	if err != nil {
 		send(reply{Type: "end", ID: req.ID, Error: err.Error()})
 		return
 	}
-	for k, v := range req.Headers {
-		httpReq.Header.Set(k, v)
-	}
+	c.applyHeaders(httpReq.Header, req.Headers)
 	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {
+		if ctx.Err() != nil {
+			// The guest left; the host already stopped the device.
+			send(reply{Type: "end", ID: req.ID})
+			return
+		}
 		send(reply{Type: "end", ID: req.ID, Error: err.Error()})
 		return
 	}
 	defer resp.Body.Close()
 	headers := map[string]string{}
-	for _, k := range []string{"Content-Type", "ETag", "Cache-Control", "Content-Disposition"} {
+	for _, k := range []string{"Content-Type", "ETag", "Cache-Control",
+		"Content-Disposition", "Set-Cookie"} {
 		if v := resp.Header.Get(k); v != "" {
 			headers[k] = v
 		}
@@ -237,9 +293,7 @@ func (c *Client) execute(req request) reply {
 		rep.Error = err.Error()
 		return rep
 	}
-	for k, v := range req.Headers {
-		httpReq.Header.Set(k, v)
-	}
+	c.applyHeaders(httpReq.Header, req.Headers)
 	client := &http.Client{Timeout: 25 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {
@@ -253,7 +307,8 @@ func (c *Client) execute(req request) reply {
 		return rep
 	}
 	headers := map[string]string{}
-	for _, k := range []string{"Content-Type", "ETag", "Cache-Control", "Content-Disposition"} {
+	for _, k := range []string{"Content-Type", "ETag", "Cache-Control",
+		"Content-Disposition", "Set-Cookie"} {
 		if v := resp.Header.Get(k); v != "" {
 			headers[k] = v
 		}

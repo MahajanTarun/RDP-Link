@@ -4,8 +4,10 @@ package host
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -13,6 +15,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,12 +24,8 @@ import (
 
 	"github.com/eminentailabs/office-rdp/core/clipboard"
 	"github.com/eminentailabs/office-rdp/core/input"
-	"github.com/eminentailabs/office-rdp/core/protocol"
-	"github.com/eminentailabs/office-rdp/core/signalling"
-	"github.com/eminentailabs/office-rdp/core/transport"
 	"github.com/pion/mediadevices"
 	_ "github.com/pion/mediadevices/pkg/driver/screen"
-	"github.com/pion/webrtc/v4"
 )
 
 type Agent struct {
@@ -66,9 +65,6 @@ type Agent struct {
 	clipMu   sync.Mutex
 	clipText string
 
-	inputHolder string
-	inputMu     sync.Mutex
-
 	recordMu     sync.Mutex
 	recording    bool
 	recordCancel context.CancelFunc
@@ -79,9 +75,6 @@ type Agent struct {
 
 	dispMu sync.RWMutex
 
-	muPeers sync.Mutex
-	peers   map[string]*transport.Peer
-
 	guestCamMu  sync.Mutex
 	guestCamJPG []byte
 	guestCamSeq uint64
@@ -89,6 +82,16 @@ type Agent struct {
 
 	failMu sync.Mutex
 	fails  map[string]*failEntry
+
+	// Sessions are short-lived tokens handed out by POST /session. They let
+	// a browser (or a media player that cannot set headers) authenticate
+	// without putting the access password into a URL.
+	sessMu   sync.Mutex
+	sessions map[string]time.Time
+
+	// relaySecret proves that a request was forwarded by this process'
+	// relay client. Only those requests may set X-Forwarded-For.
+	relaySecret string
 }
 
 type failEntry struct {
@@ -102,16 +105,34 @@ const (
 	maxUploadFile = 256 << 20
 	authWindow    = time.Minute
 	authMaxFails  = 20
+	// maxFailEntries bounds the throttle table so a flood of failed logins
+	// from spoofed addresses cannot grow it without limit.
+	maxFailEntries = 4096
+	// sessionTTL is how long a browser session stays valid.
+	sessionTTL = 12 * time.Hour
+	// maxSessions bounds the session table.
+	maxSessions = 64
+	// sessionCookie is the name of the browser session cookie.
+	sessionCookie = "rdplink_sid"
 )
 
 func New(peerID, alias, password string, port int) *Agent {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		secret = []byte(fmt.Sprintf("%d", time.Now().UnixNano()))
+	}
 	a := &Agent{PeerID: peerID, Alias: alias, Password: password, Port: port,
-		peers: map[string]*transport.Peer{}, fails: map[string]*failEntry{},
+		fails:    map[string]*failEntry{},
+		sessions: map[string]time.Time{}, relaySecret: hex.EncodeToString(secret),
 		Forwards: map[int]bool{}, done: make(chan struct{})}
 	a.LANIP = lanIP()
 	a.WANIP = wanIP()
 	return a
 }
+
+// RelaySecret returns the per-process secret that marks relay-forwarded
+// requests. It is handed to the in-process relay client.
+func (a *Agent) RelaySecret() string { return a.relaySecret }
 
 // FramePNG returns the latest frame as PNG, encoding lazily on the first
 // request for each captured frame.
@@ -175,8 +196,19 @@ func (a *Agent) FrameJPEG() ([]byte, string, uint64) {
 
 // auth enforces the access password, with the same throttling used by every
 // endpoint (including the device bridge).
+//
+// Three credentials are accepted:
+//
+//   - X-Office-Password: the access password (desktop viewers, CLI tools);
+//   - the rdplink_sid cookie: a session handed out by POST /session
+//     (browsers, where media elements cannot set headers);
+//   - ?token=: the same session token, for players such as ffplay that can
+//     only be given a URL.
+//
+// The access password is never accepted as a URL query parameter, so it does
+// not end up in proxy logs, browser history or the process list.
 func (a *Agent) auth(w http.ResponseWriter, r *http.Request) bool {
-	ip := clientIP(r)
+	ip := clientIP(r, a.relaySecret)
 	if a.throttled(ip) {
 		http.Error(w, "too many attempts", http.StatusTooManyRequests)
 		return false
@@ -185,11 +217,16 @@ func (a *Agent) auth(w http.ResponseWriter, r *http.Request) bool {
 		http.Error(w, "host password not configured", http.StatusForbidden)
 		return false
 	}
-	supplied := r.URL.Query().Get("password")
-	if supplied == "" {
-		supplied = r.Header.Get("X-Office-Password")
+	if supplied := r.Header.Get("X-Office-Password"); supplied != "" {
+		if subtle.ConstantTimeCompare([]byte(supplied), []byte(a.Password)) == 1 {
+			a.clearFailures(ip)
+			return true
+		}
+		a.noteFailure(ip)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return false
 	}
-	if subtle.ConstantTimeCompare([]byte(supplied), []byte(a.Password)) == 1 {
+	if token := sessionToken(r); token != "" && a.validSession(token) {
 		a.clearFailures(ip)
 		return true
 	}
@@ -198,9 +235,145 @@ func (a *Agent) auth(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
+// sessionToken extracts the session token from the cookie or the query.
+func sessionToken(r *http.Request) string {
+	if cookie, err := r.Cookie(sessionCookie); err == nil && cookie.Value != "" {
+		return cookie.Value
+	}
+	return r.URL.Query().Get("token")
+}
+
+// newSession issues a session token.
+func (a *Agent) newSession() string {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
+	token := hex.EncodeToString(buf)
+	now := time.Now()
+	a.sessMu.Lock()
+	defer a.sessMu.Unlock()
+	for key, expiry := range a.sessions {
+		if now.After(expiry) {
+			delete(a.sessions, key)
+		}
+	}
+	if len(a.sessions) >= maxSessions {
+		// Drop the oldest session when the table is full.
+		oldestKey, oldest := "", now
+		for key, expiry := range a.sessions {
+			if expiry.Before(oldest) {
+				oldestKey, oldest = key, expiry
+			}
+		}
+		delete(a.sessions, oldestKey)
+	}
+	a.sessions[token] = now.Add(sessionTTL)
+	return token
+}
+
+// validSession reports whether a session token is still active.
+func (a *Agent) validSession(token string) bool {
+	a.sessMu.Lock()
+	defer a.sessMu.Unlock()
+	expiry, ok := a.sessions[token]
+	if !ok {
+		return false
+	}
+	if time.Now().After(expiry) {
+		delete(a.sessions, token)
+		return false
+	}
+	return true
+}
+
+// handleSession exchanges the access password for a session cookie.
+func (a *Agent) handleSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+		return
+	}
+	ip := clientIP(r, a.relaySecret)
+	if a.throttled(ip) {
+		http.Error(w, "too many attempts", http.StatusTooManyRequests)
+		return
+	}
+	if a.Password == "" {
+		http.Error(w, "host password not configured", http.StatusForbidden)
+		return
+	}
+	supplied := r.Header.Get("X-Office-Password")
+	if supplied == "" {
+		var body struct {
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err == nil {
+			supplied = body.Password
+		}
+	}
+	if subtle.ConstantTimeCompare([]byte(supplied), []byte(a.Password)) != 1 {
+		a.noteFailure(ip)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	a.clearFailures(ip)
+	token := a.newSession()
+	if token == "" {
+		http.Error(w, "session failed", http.StatusInternalServerError)
+		return
+	}
+	// The cookie is marked Secure whenever the connection is encrypted. On a
+	// plain LAN connection it has to stay usable, so the flag follows the
+	// transport instead of being hard-coded.
+	// #nosec G124 -- Secure is set for every HTTPS request (see above).
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(sessionTTL / time.Second),
+	})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"token":     token,
+		"expiresIn": int(sessionTTL / time.Second),
+	})
+}
+
+// sameOrigin reports whether a request comes from this host's own pages.
+// Browsers send Origin on state-changing requests, so this blocks a web page
+// on another site from driving the host with a stolen or guessed password.
+func sameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // native clients do not send Origin
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, r.Host)
+}
+
 func (a *Agent) Serve() error {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/session", a.handleSession)
+	// auth accepts the access password, a session cookie or a session token.
+	// State-changing requests additionally have to come from this host's own
+	// pages, so another site cannot drive the host with a leaked password.
+	auth := func(w http.ResponseWriter, r *http.Request) bool {
+		if !sameOrigin(r) {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return false
+		}
+		return a.auth(w, r)
+	}
 	mux.HandleFunc("/info", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"peerId": a.PeerID,
@@ -210,8 +383,10 @@ func (a *Agent) Serve() error {
 			"port":   a.Port,
 		})
 	})
-	auth := a.auth
 	mux.HandleFunc("/displays", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(w, r) {
+			return
+		}
 		type display struct {
 			Index   int  `json:"index"`
 			Width   int  `json:"width"`
@@ -357,6 +532,10 @@ func (a *Agent) Serve() error {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
+		// The file is a download, not a page: never let the browser render
+		// it inline.
+		w.Header().Set("Content-Disposition",
+			"attachment; filename=\""+sanitizeName(r.URL.Query().Get("name"))+"\"")
 		http.ServeFile(w, r, path)
 	})
 	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
@@ -373,12 +552,18 @@ func (a *Agent) Serve() error {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		// The guest may name the file explicitly (?name=). Otherwise the
+		// multipart filename is used.
+		requested := sanitizeName(r.URL.Query().Get("name"))
 		for {
 			part, err := mr.NextPart()
 			if err != nil {
 				break
 			}
 			name := sanitizeName(part.FileName())
+			if requested != "" {
+				name = requested
+			}
 			path, ok := safeJoin(a.InboxDir(), name)
 			if ok && !strings.HasPrefix(name, ".") {
 				// #nosec G304 G703 -- safeJoin rejects separators and parent traversal.
@@ -545,90 +730,6 @@ func wanIP() string {
 	return string(buf[:n])
 }
 
-// RunSignaling connects to rendezvous and handles WebRTC offers.
-func (a *Agent) RunSignaling(rendezvousURL string) {
-	c, err := signalling.Connect(rendezvousURL, a.PeerID)
-	if err != nil {
-		fmt.Println("signalling connect:", err)
-		return
-	}
-	defer c.Close()
-	for msg := range c.Recv {
-		t := protocol.ParseType(msg)
-		switch t {
-		case "offer":
-			var offer protocol.Offer
-			_ = json.Unmarshal(msg, &offer)
-			a.handleOffer(c, offer)
-		case "ice":
-			var ic protocol.ICECandidate
-			_ = json.Unmarshal(msg, &ic)
-			a.handleICE(ic)
-		}
-	}
-}
-
-func (a *Agent) handleOffer(c *signalling.Client, offer protocol.Offer) {
-	if subtle.ConstantTimeCompare([]byte(offer.Password), []byte(a.Password)) != 1 {
-		fmt.Println("rejected offer: bad password from", offer.From)
-		auditLog("rejected " + offer.From)
-		return
-	}
-	auditLog("connect " + offer.From)
-	peer, err := transport.NewPeer(transport.Config{STUNServers: []string{"stun:stun.l.google.com:19302"}})
-	if err != nil {
-		fmt.Println("peer:", err)
-		return
-	}
-	if a.vt != nil {
-		if _, err := peer.PC.AddTrack(a.vt); err != nil {
-			fmt.Println("add track:", err)
-		}
-	}
-	// data channel handler for input
-	peer.PC.OnDataChannel(func(dc *webrtc.DataChannel) {
-		dc.OnMessage(func(m webrtc.DataChannelMessage) {
-			if a.ReadOnly {
-				return
-			}
-			var ev map[string]any
-			_ = json.Unmarshal(m.Data, &ev)
-			if err := input.Inject(ev); err != nil {
-				fmt.Println("inject:", err)
-			}
-		})
-	})
-	// ICE candidates -> signalling
-	peer.PC.OnICECandidate(func(cand *webrtc.ICECandidate) {
-		if cand == nil {
-			return
-		}
-		ice := protocol.ICECandidate{Type: "ice", From: a.PeerID, To: offer.From, Candidate: cand.ToJSON().Candidate}
-		_ = c.SendJSON(ice)
-	})
-	answer, err := peer.AcceptOffer(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offer.SDP})
-	if err != nil {
-		fmt.Println("accept offer:", err)
-		peer.Close()
-		return
-	}
-	a.muPeers.Lock()
-	a.peers[offer.From] = peer
-	a.muPeers.Unlock()
-	resp := protocol.Answer{Type: "answer", From: a.PeerID, To: offer.From, SDP: answer.SDP}
-	_ = c.SendJSON(resp)
-}
-
-func (a *Agent) handleICE(ic protocol.ICECandidate) {
-	a.muPeers.Lock()
-	peer, ok := a.peers[ic.From]
-	a.muPeers.Unlock()
-	if !ok || peer == nil {
-		return
-	}
-	_ = peer.AddICECandidate(webrtc.ICECandidateInit{Candidate: ic.Candidate})
-}
-
 func (a *Agent) GetClipboard() string {
 	a.clipMu.Lock()
 	defer a.clipMu.Unlock()
@@ -654,30 +755,6 @@ func (a *Agent) StartClipboardSync() {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}()
-}
-
-func (a *Agent) RequestInput(peerID string) bool {
-	a.inputMu.Lock()
-	defer a.inputMu.Unlock()
-	if a.inputHolder == "" || a.inputHolder == peerID {
-		a.inputHolder = peerID
-		return true
-	}
-	return false
-}
-
-func (a *Agent) ReleaseInput(peerID string) {
-	a.inputMu.Lock()
-	defer a.inputMu.Unlock()
-	if a.inputHolder == peerID {
-		a.inputHolder = ""
-	}
-}
-
-func (a *Agent) InputHolder() string {
-	a.inputMu.Lock()
-	defer a.inputMu.Unlock()
-	return a.inputHolder
 }
 
 func (a *Agent) InboxDir() string {
@@ -786,18 +863,25 @@ func (a *Agent) RecordingStatus() (bool, string) {
 	return a.recording, a.recordPath
 }
 
-func clientIP(r *http.Request) string {
+// clientIP returns the address used for throttling. X-Forwarded-For is only
+// believed when the request carries this process' relay secret, because any
+// local process (or a guest tunnelled in through adb/ssh port forwarding)
+// could otherwise spoof an address and bypass the limiter.
+func clientIP(r *http.Request, relaySecret string) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
-	// Relayed requests all arrive from 127.0.0.1; use the real client address
-	// so per-IP throttling stays meaningful.
-	if host == "127.0.0.1" || host == "::1" {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if first := strings.Split(xff, ",")[0]; strings.TrimSpace(first) != "" {
-				return strings.TrimSpace(first)
-			}
+	if relaySecret == "" {
+		return host
+	}
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Rdp-Relay-Secret")),
+		[]byte(relaySecret)) != 1 {
+		return host
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if first := strings.Split(xff, ",")[0]; strings.TrimSpace(first) != "" {
+			return strings.TrimSpace(first)
 		}
 	}
 	return host
@@ -822,6 +906,22 @@ func (a *Agent) noteFailure(ip string) {
 	defer a.failMu.Unlock()
 	entry, ok := a.fails[ip]
 	if !ok || time.Since(entry.first) > authWindow {
+		if len(a.fails) >= maxFailEntries {
+			// Keep the table bounded: drop the oldest entries instead of
+			// growing without limit.
+			now := time.Now()
+			for key, item := range a.fails {
+				if now.Sub(item.first) > authWindow {
+					delete(a.fails, key)
+				}
+			}
+			if len(a.fails) >= maxFailEntries {
+				for key := range a.fails {
+					delete(a.fails, key)
+					break
+				}
+			}
+		}
 		a.fails[ip] = &failEntry{count: 1, first: time.Now()}
 		return
 	}

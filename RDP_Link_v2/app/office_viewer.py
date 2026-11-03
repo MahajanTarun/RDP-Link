@@ -5,9 +5,11 @@ keyboard input, and syncs the clipboard. Works against the desktop Go agent and
 the Android host service.
 """
 
+import http.client
 import io
 import json
 import os
+import queue
 import sys
 import tempfile
 import shutil
@@ -112,6 +114,104 @@ class Chip(tk.Label):
                            highlightbackground=ACCENT_HOVER if inside else BORDER)
 
 
+class InputSender:
+    """Sends input events to the host from a background thread.
+
+    Two things matter here: the Tk thread must never block on the network,
+    and the connection must be reused. Opening a new TCP connection for every
+    mouse move made the viewer freeze on a slow link.
+    """
+
+    def __init__(self, host_url, password, stop_event):
+        self.host_url = host_url.rstrip("/")
+        self.password = password
+        self.stop = stop_event
+        self.queue = queue.Queue(maxsize=256)
+        self._conn = None
+        self._parts = urllib.parse.urlsplit(self.host_url)
+        self._prefix = self._parts.path.rstrip("/")
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def send(self, payload):
+        """Queue an event; the oldest event is dropped when the queue is full."""
+        try:
+            self.queue.put_nowait(payload)
+        except queue.Full:
+            try:
+                self.queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self.queue.put_nowait(payload)
+            except queue.Full:
+                pass
+
+    # -- internals --------------------------------------------------------
+    def _run(self):
+        while not self.stop.is_set():
+            try:
+                first = self.queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            batch = [first]
+            while True:
+                try:
+                    batch.append(self.queue.get_nowait())
+                except queue.Empty:
+                    break
+            self._flush(batch)
+
+    def _flush(self, batch):
+        """Send the batch, keeping only the last pointer move."""
+        pending_move = None
+        for event in batch:
+            if event.get("type") == "move":
+                pending_move = event
+                continue
+            if pending_move is not None:
+                self._post(pending_move)
+                pending_move = None
+            self._post(event)
+        if pending_move is not None:
+            self._post(pending_move)
+
+    def _post(self, payload):
+        body = json.dumps(payload).encode()
+        headers = {"Content-Type": "application/json",
+                   "Content-Length": str(len(body))}
+        if self.password:
+            headers["X-Office-Password"] = self.password
+        path = (self._prefix or "") + "/input"
+        for _attempt in (0, 1):
+            try:
+                if self._conn is None:
+                    self._conn = self._connect()
+                self._conn.request("POST", path, body=body, headers=headers)
+                response = self._conn.getresponse()
+                response.read()
+                return
+            except Exception:
+                self._close()
+        return
+
+    def _connect(self):
+        host = self._parts.hostname or "127.0.0.1"
+        port = self._parts.port or (443 if self._parts.scheme == "https" else 80)
+        if self._parts.scheme == "https":
+            return http.client.HTTPSConnection(host, port, timeout=3)
+        return http.client.HTTPConnection(host, port, timeout=3)
+
+    def _close(self):
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
+
 class Viewer:
     def __init__(self, host_url, password=None):
         self.host_url = host_url.rstrip("/")
@@ -177,7 +277,7 @@ class Viewer:
         self.canvas.grid(row=0, column=0, sticky="nsew")
         self.vbar.grid(row=0, column=1, sticky="ns")
         self.hbar.grid(row=1, column=0, sticky="ew")
-        self.canvas.bind("<Configure>", lambda _e: self._render_current())
+        self.canvas.bind("<Configure>", self._on_configure)
         self.canvas.focus_set()
 
         footer = tk.Frame(self.root, bg=SURFACE)
@@ -197,6 +297,14 @@ class Viewer:
         self._last_clip = ""
         self._last_remote = ""
         self._stop = False
+        self._token = ""
+        self._resize_after = None
+        self._move_after = None
+        self._pending_move = None
+        self._sender_stop = threading.Event()
+        self._sender = InputSender(self.host_url, self.password,
+                                   self._sender_stop)
+        self._sender.start()
         self._frame_path = "/frame.jpg" if HAVE_PIL else "/frame.png"
         self._tmp = tempfile.NamedTemporaryFile(
             suffix=".jpg" if HAVE_PIL else ".png", delete=False)
@@ -240,7 +348,7 @@ class Viewer:
         try:
             self._audio_proc = subprocess.Popen(
                 [player, "-nodisp", "-autoexit", "-loglevel", "quiet",
-                 self._auth_url("/audio")])
+                 self._media_url("/audio")])
             self._set_status("Playing host audio", "live")
         except Exception as exc:
             self._set_status(f"Audio failed: {exc}", "error")
@@ -278,8 +386,9 @@ class Viewer:
 
     def _load_displays(self):
         try:
-            url = self.host_url + "/displays"
-            with urllib.request.urlopen(url, timeout=4) as response:
+            request = urllib.request.Request(
+                self.host_url + "/displays", headers=self._auth_headers())
+            with urllib.request.urlopen(request, timeout=4) as response:
                 data = json.load(response)
             items = data.get("displays") or []
             if len(items) < 2:
@@ -308,12 +417,26 @@ class Viewer:
             body = json.dumps({"index": index}).encode()
             req = urllib.request.Request(
                 self._auth_url("/display"), data=body, method="POST",
-                headers={"Content-Type": "application/json"})
+                headers=self._auth_headers({"Content-Type": "application/json"}))
             with urllib.request.urlopen(req, timeout=5):
                 pass
             self._set_status(f"Switched to display {index + 1}", "connecting")
         except Exception as exc:
             self._set_status(f"Display switch failed: {exc}", "error")
+
+    def _on_configure(self, _event=None):
+        # Resizing fires dozens of events per second. Re-render once the
+        # window settles instead of on every intermediate size.
+        if self._resize_after is not None:
+            try:
+                self.root.after_cancel(self._resize_after)
+            except Exception:
+                pass
+        self._resize_after = self.root.after(60, self._render_resized)
+
+    def _render_resized(self):
+        self._resize_after = None
+        self._render_current()
 
     def _render_current(self):
         if getattr(self, "_pil_image", None) is None and getattr(self, "photo", None) is None:
@@ -335,14 +458,48 @@ class Viewer:
 
     # -- networking ----------------------------------------------------------
     def _auth_url(self, path, first=True):
-        url = self.host_url + path
+        """Build a URL for a request that carries the password as a header."""
+        return self.host_url + path
+
+    def _session_token(self):
+        """Exchange the password for a session token.
+
+        Media players such as ffplay cannot send headers, so they get a
+        short-lived token in the URL instead of the password.
+        """
+        if self._token:
+            return self._token
+        if not self.password:
+            return ""
+        try:
+            request = urllib.request.Request(
+                self.host_url + "/session", method="POST", data=b"{}",
+                headers={"Content-Type": "application/json",
+                         "X-Office-Password": self.password})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                data = json.load(response)
+            self._token = data.get("token") or ""
+        except Exception:
+            self._token = ""
+        return self._token
+
+    def _media_url(self, path):
+        """URL for a media element, authenticated with a session token."""
+        token = self._session_token()
+        if not token:
+            return self.host_url + path
+        sep = "&" if "?" in path else "?"
+        return self.host_url + path + sep + "token=" + urllib.parse.quote(token)
+
+    def _auth_headers(self, extra=None):
+        headers = dict(extra or {})
         if self.password:
-            sep = "&" if "?" in url else "?"
-            url += sep + "password=" + urllib.parse.quote(self.password)
-        return url
+            headers["X-Office-Password"] = self.password
+        return headers
 
     def _fetch(self, path, headers=None):
-        request = urllib.request.Request(self._auth_url(path), headers=headers or {})
+        request = urllib.request.Request(self._auth_url(path),
+                                         headers=self._auth_headers(headers))
         with urllib.request.urlopen(request, timeout=3) as response:
             return response.read(), dict(response.headers)
 
@@ -350,22 +507,15 @@ class Viewer:
         return self._fetch(path, headers)[0]
 
     def _post(self, payload):
-        try:
-            request = urllib.request.Request(
-                self._auth_url("/input"),
-                data=json.dumps(payload).encode(),
-                headers={"Content-Type": "application/json"},
-            )
-            urllib.request.urlopen(request, timeout=2)
-        except Exception:
-            pass
+        """Queue an input event; the sender thread does the network work."""
+        self._sender.send(payload)
 
     def _post_clip(self, text):
         try:
             request = urllib.request.Request(
                 self._auth_url("/clipboard"),
                 data=json.dumps({"text": text}).encode(),
-                headers={"Content-Type": "application/json"},
+                headers=self._auth_headers({"Content-Type": "application/json"}),
             )
             urllib.request.urlopen(request, timeout=3)
         except Exception:
@@ -378,7 +528,8 @@ class Viewer:
             try:
                 headers = {"If-None-Match": etag} if etag else {}
                 request = urllib.request.Request(
-                    self._auth_url(self._frame_path), headers=headers)
+                    self._auth_url(self._frame_path),
+                    headers=self._auth_headers(headers))
                 try:
                     with urllib.request.urlopen(request, timeout=3) as response:
                         data = response.read()
@@ -506,7 +657,19 @@ class Viewer:
         return int(rx), int(ry)
 
     def _on_move(self, event):
-        x, y = self._to_remote(event.x, event.y)
+        # Throttle the pointer: the browser viewer sends at most one move
+        # every 40 ms, and the host cannot use more than that anyway.
+        self._pending_move = self._to_remote(event.x, event.y)
+        if self._move_after is not None:
+            return
+        self._move_after = self.root.after(40, self._flush_move)
+
+    def _flush_move(self):
+        self._move_after = None
+        if self._pending_move is None:
+            return
+        x, y = self._pending_move
+        self._pending_move = None
         self._post({"type": "move", "x": x, "y": y})
 
     def _on_click(self, event):
@@ -580,9 +743,14 @@ class Viewer:
                     ("--" + boundary + "--").encode(),
                 ]
                 body = b"\r\n".join(parts)
+                # The name is passed explicitly so hosts that do not read
+                # the multipart filename still store it correctly.
                 request = urllib.request.Request(
-                    self._auth_url("/upload"), data=body,
-                    headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
+                    self._auth_url("/upload?name=" +
+                                   urllib.parse.quote(os.path.basename(path))),
+                    data=body,
+                    headers=self._auth_headers(
+                        {"Content-Type": "multipart/form-data; boundary=" + boundary}),
                 )
                 urllib.request.urlopen(request, timeout=30)
                 messagebox.showinfo("RDP Link", "Upload complete")
@@ -594,9 +762,11 @@ class Viewer:
         if not name:
             return
         try:
-            data = urllib.request.urlopen(
-                self._auth_url("/download?name=" + urllib.parse.quote(name)), timeout=30
-            ).read()
+            request = urllib.request.Request(
+                self._auth_url("/download?name=" + urllib.parse.quote(name)),
+                headers=self._auth_headers())
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = response.read()
             path = filedialog.asksaveasfilename(initialfile=name)
             if path:
                 with open(path, "wb") as fh:
@@ -607,6 +777,17 @@ class Viewer:
 
     def _close(self):
         self._stop = True
+        self._sender_stop.set()
+        if self._move_after is not None:
+            try:
+                self.root.after_cancel(self._move_after)
+            except Exception:
+                pass
+        if self._resize_after is not None:
+            try:
+                self.root.after_cancel(self._resize_after)
+            except Exception:
+                pass
         proc = getattr(self, "_audio_proc", None)
         if proc is not None:
             proc.terminate()
@@ -628,6 +809,20 @@ class Viewer:
         self.root.mainloop()
 
 
+def read_password_file(path):
+    """Read a password from a private file and remove it."""
+    try:
+        with open(path) as fh:
+            value = fh.read().strip()
+    except OSError:
+        return None
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+    return value or None
+
+
 def probe(host_url, password=None):
     """Fetch one frame without opening a window (used by CI/validation)."""
     if not host_url:
@@ -637,10 +832,11 @@ def probe(host_url, password=None):
     if not base.startswith("http"):
         base = "http://" + base
     url = base + "/frame.jpg"
+    request = urllib.request.Request(url)
     if password:
-        url += "?password=" + urllib.parse.quote(password)
+        request.add_header("X-Office-Password", password)
     try:
-        with urllib.request.urlopen(url, timeout=10) as response:
+        with urllib.request.urlopen(request, timeout=10) as response:
             data = response.read()
     except Exception as exc:
         print(f"probe: {exc}", file=sys.stderr)
@@ -662,14 +858,19 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("host_url", nargs="?")
     parser.add_argument("--password", default=None)
+    parser.add_argument("--password-file", default=None,
+                        help="read the access password from a private file")
     parser.add_argument("--probe", action="store_true",
                         help="fetch one frame, print its size, then exit")
     parser.add_argument("--scale", default=None,
                         help="startup scale: Fit, Fill, 1:1, or 50, 75, 125, 150")
     args = parser.parse_args()
+    password = args.password
+    if not password and args.password_file:
+        password = read_password_file(args.password_file)
     if args.probe:
-        sys.exit(probe(args.host_url, password=args.password))
-    viewer = Viewer(args.host_url, password=args.password)
+        sys.exit(probe(args.host_url, password=password))
+    viewer = Viewer(args.host_url, password=password)
     if args.scale:
         viewer.zoom_var.set(args.scale)
         viewer._on_mode_change()

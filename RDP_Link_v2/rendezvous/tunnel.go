@@ -33,6 +33,10 @@ type tunnelRequest struct {
 	// Stream asks the host to forward the response incrementally (audio,
 	// MJPEG camera, long downloads).
 	Stream bool `json:"stream,omitempty"`
+	// Cancel tells the host to abandon the request with this ID. It is sent
+	// when the guest disconnects, so the host can stop capturing and close
+	// the local stream instead of streaming into the void.
+	Cancel bool `json:"cancel,omitempty"`
 }
 
 type tunnelReply struct {
@@ -84,8 +88,17 @@ func (t *tunnel) readLoop(s *Server) {
 			delete(t.pending, reply.ID)
 		}
 		t.mu.Unlock()
-		if ch != nil {
-			ch <- reply
+		if ch == nil {
+			continue
+		}
+		// Never block the reader: a guest that vanished mid-stream would
+		// otherwise stall the whole tunnel (and every other guest) once the
+		// buffer filled up.
+		select {
+		case ch <- reply:
+		default:
+			// The consumer is gone or too slow. Live streams may drop a
+			// frame; a missing "end" is recovered by the cancel frame.
 		}
 	}
 }
@@ -103,11 +116,21 @@ func (t *tunnel) send(req tunnelRequest) error {
 var tunnelSeq uint64
 
 // handleTunnel upgrades a host connection and registers it under its peer ID.
+// The upgrade request must carry a valid Ed25519 signature for the peer ID,
+// so nobody else can take over a host's tunnel.
 func (s *Server) handleTunnel(w http.ResponseWriter, r *http.Request) {
 	peerID := normalizeID(r.URL.Query().Get("peerId"))
-	token := r.URL.Query().Get("token")
-	if peerID == "" || token == "" {
-		http.Error(w, "peerId and token required", http.StatusBadRequest)
+	if peerID == "" {
+		http.Error(w, "peerId required", http.StatusBadRequest)
+		return
+	}
+	signed, ok := s.verifyPeer(r, nil)
+	if !ok {
+		http.Error(w, "signature required", http.StatusUnauthorized)
+		return
+	}
+	if signed != peerID {
+		http.Error(w, "peer id does not match the signature", http.StatusForbidden)
 		return
 	}
 
@@ -117,12 +140,6 @@ func (s *Server) handleTunnel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "already connected", http.StatusConflict)
 		return
 	}
-	if saved, ok := s.tunnelTokens[peerID]; ok && saved != token {
-		s.mu.Unlock()
-		http.Error(w, "invalid tunnel token", http.StatusForbidden)
-		return
-	}
-	s.tunnelTokens[peerID] = token
 	s.mu.Unlock()
 
 	ws, err := s.upgrader.Upgrade(w, r, nil)
@@ -154,6 +171,9 @@ var requestHeaders = map[string]bool{
 	"accept":              true,
 	"content-disposition": true,
 	"x-forwarded-for":     true,
+	// The session cookie lets a browser guest authenticate through the
+	// relay without putting the password in a URL.
+	"cookie": true,
 }
 
 var responseHeaders = map[string]bool{
@@ -162,6 +182,8 @@ var responseHeaders = map[string]bool{
 	"cache-control":       true,
 	"content-disposition": true,
 	"x-forwarded-for":     true,
+	// The host's session cookie must reach the guest through the relay.
+	"set-cookie": true,
 }
 
 // handleProxy forwards /t/<peerId>/<path> to the host over its tunnel.
@@ -216,6 +238,13 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	t.mu.Lock()
 	t.pending[id] = ch
 	t.mu.Unlock()
+	// The pending entry is always removed, whatever happens below: a leaked
+	// entry would keep the reply channel (and its buffer) alive forever.
+	defer func() {
+		t.mu.Lock()
+		delete(t.pending, id)
+		t.mu.Unlock()
+	}()
 
 	headers := copyHeaders(r.Header, requestHeaders)
 	clientHost, _, _ := net.SplitHostPort(r.RemoteAddr)
@@ -233,15 +262,12 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		Stream:  streaming,
 	}
 	if err := t.send(req); err != nil {
-		t.mu.Lock()
-		delete(t.pending, id)
-		t.mu.Unlock()
 		http.Error(w, "relay send failed", http.StatusBadGateway)
 		return
 	}
 
 	if streaming {
-		s.proxyStream(w, r, ch)
+		s.proxyStream(w, r, t, id, ch)
 		return
 	}
 
@@ -260,9 +286,6 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(reply.Status)
 		_, _ = w.Write(data)
 	case <-time.After(30 * time.Second):
-		t.mu.Lock()
-		delete(t.pending, id)
-		t.mu.Unlock()
 		http.Error(w, "relay timeout", http.StatusGatewayTimeout)
 	case <-t.closed:
 		http.Error(w, "host disconnected", http.StatusBadGateway)
@@ -270,9 +293,19 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 // proxyStream relays an incremental response (audio/MJPEG) to the guest.
-func (s *Server) proxyStream(w http.ResponseWriter, r *http.Request, ch chan tunnelReply) {
+//
+// When the guest goes away the stream is cancelled: the host is told to stop
+// capturing and the local request is aborted, so neither side keeps a camera
+// or an audio device busy for a viewer that is no longer there.
+func (s *Server) proxyStream(w http.ResponseWriter, r *http.Request, t *tunnel, id string, ch chan tunnelReply) {
 	flusher, _ := w.(http.Flusher)
 	started := false
+	cancelled := false
+	defer func() {
+		if !cancelled {
+			t.cancel(id)
+		}
+	}()
 	for {
 		select {
 		case frame := <-ch:
@@ -291,28 +324,42 @@ func (s *Server) proxyStream(w http.ResponseWriter, r *http.Request, ch chan tun
 			case "chunk":
 				data, _ := base64.StdEncoding.DecodeString(frame.Data)
 				if _, err := w.Write(data); err != nil {
+					cancelled = true
+					t.cancel(id)
 					return
 				}
 				if flusher != nil {
 					flusher.Flush()
 				}
 			case "end":
+				cancelled = true
 				return
 			default:
 				if frame.Error != "" && !started {
 					http.Error(w, frame.Error, http.StatusBadGateway)
+					cancelled = true
+					t.cancel(id)
 					return
 				}
 			}
 		case <-r.Context().Done():
+			cancelled = true
+			t.cancel(id)
 			return
 		case <-time.After(2 * time.Minute):
+			cancelled = true
+			t.cancel(id)
 			if !started {
 				http.Error(w, "stream timeout", http.StatusGatewayTimeout)
 			}
 			return
 		}
 	}
+}
+
+// cancel asks the host to abandon a request.
+func (t *tunnel) cancel(id string) {
+	_ = t.send(tunnelRequest{ID: id, Cancel: true})
 }
 
 // relayURL builds the public URL a guest should open for a tunnelled host.

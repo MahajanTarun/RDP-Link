@@ -10,6 +10,7 @@ bypassed.
 import json
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -138,13 +139,28 @@ def _macos_items():
     return items
 
 
-def _mac_firewall(agent):
-    script = (
-        f'do shell script "/usr/libexec/ApplicationFirewall/socketfilterfw --add '
-        f"'{agent}' && /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp "
-        f"'{agent}'\" with administrator privileges"
+def _applescript_string(value):
+    """Escape a value so it can be used inside an AppleScript string literal."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _mac_firewall_script(agent):
+    """Build the AppleScript that allows the agent through the firewall.
+
+    The path is quoted for the shell and escaped for the AppleScript
+    literal. Without both, a path with a space or an apostrophe (for
+    example "/Volumes/Tarun's SSD/...") breaks the command.
+    """
+    quoted = _applescript_string(shlex.quote(agent))
+    return (
+        'do shell script "/usr/libexec/ApplicationFirewall/socketfilterfw --add '
+        f"{quoted} && /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp "
+        f'{quoted}" with administrator privileges'
     )
-    _run(["osascript", "-e", script], timeout=60)
+
+
+def _mac_firewall(agent):
+    _run(["osascript", "-e", _mac_firewall_script(agent)], timeout=60)
     return True
 
 
@@ -301,7 +317,8 @@ def _linux_service():
     with open(unit, "w") as fh:
         fh.write(
             "[Unit]\nDescription=RDP Link host\n\n"
-            f"[Service]\nExecStart={agent} --host --port 8088\nRestart=always\n\n"
+            f"[Service]\nExecStart={shlex.quote(agent)} --host --port 8088\n"
+            "Restart=always\n\n"
             "[Install]\nWantedBy=default.target\n")
     _run(["systemctl", "--user", "daemon-reload"])
     _run(["systemctl", "--user", "enable", "--now", "rdp-link-host.service"])

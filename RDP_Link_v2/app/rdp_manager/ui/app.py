@@ -506,16 +506,38 @@ class UbuntuRDPApp:
         except Exception as e:
             messagebox.showerror("RDP Link", str(e))
 
+    def _signed_peer_list(self, rendezvous_url):
+        """Ask the agent to list the peers of a rendezvous server.
+
+        The registry is only readable with a signed request, so the agent
+        (which owns the device key) performs the call.
+        """
+        import json
+        import subprocess
+        binary = self._find_office_binary()
+        if not binary:
+            return None
+        try:
+            out = subprocess.check_output(
+                [binary, "--list-peers", rendezvous_url.strip()],
+                text=True, timeout=15)
+        except Exception:
+            return None
+        try:
+            return json.loads(out)
+        except Exception:
+            return None
+
     def browse_office_hosts(self):
         url = simpledialog.askstring("RDP Link", "Rendezvous URL:")
         if not url:
             return
-        try:
-            import json, urllib.request
-            with urllib.request.urlopen(url.rstrip("/") + "/peers") as r:
-                peers = json.load(r)
-        except Exception as e:
-            messagebox.showerror("RDP Link", str(e))
+        peers = self._signed_peer_list(url)
+        if peers is None:
+            messagebox.showerror(
+                "RDP Link",
+                "Could not list the hosts. The rendezvous only answers signed "
+                "requests; make sure the RDP Link agent is installed.")
             return
         if not peers:
             messagebox.showinfo("RDP Link", "No hosts found.")

@@ -65,6 +65,16 @@ def _load_config():
         return {}
 
 
+def write_password_file(password):
+    """Store the access password in a 0600 file and return its path."""
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    path = os.path.join(CONFIG_DIR, "host-password")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(password + "\n")
+    return path
+
+
 def _save_config(data):
     os.makedirs(CONFIG_DIR, exist_ok=True)
     try:
@@ -276,9 +286,12 @@ class OfficePanel(ttk.Frame):
             "rendezvous": self.rendezvous.get().strip(),
         })
         _save_config(self.config_data)
+        # The password goes into a 0600 file instead of the command line, so
+        # it does not show up in the process list.
+        password_file = write_password_file(password)
         args = [binp, "--host", "--port", str(self.port.get()),
                 "--display", str(self.display.get() or "0"),
-                "--password", password]
+                "--password-file", password_file]
         if self.rendezvous.get().strip():
             args += ["--rendezvous", self.rendezvous.get().strip()]
         try:
@@ -304,8 +317,10 @@ class OfficePanel(ttk.Frame):
                 self.after(0, lambda: self._set_state("Host exited", "#ef4444"))
                 return
             try:
-                url = f"http://127.0.0.1:{port}/info?password={urllib.parse.quote(password)}"
-                with urllib.request.urlopen(url, timeout=2) as response:
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/info",
+                    headers={"X-Office-Password": password})
+                with urllib.request.urlopen(request, timeout=2) as response:
                     info = json.load(response)
                 lan = f"{info.get('lanIp', '')}:{info.get('port', port)}"
                 wan = f"{info.get('wanIp', '')}:{info.get('port', port)}"

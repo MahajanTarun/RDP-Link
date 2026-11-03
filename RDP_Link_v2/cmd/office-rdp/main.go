@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -10,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"html"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -24,6 +24,7 @@ import (
 	"github.com/eminentailabs/office-rdp/core/identity"
 	"github.com/eminentailabs/office-rdp/core/mdns"
 	"github.com/eminentailabs/office-rdp/core/pairing"
+	"github.com/eminentailabs/office-rdp/core/peerauth"
 	"github.com/eminentailabs/office-rdp/core/peers"
 	"github.com/eminentailabs/office-rdp/core/relay"
 	"github.com/kbinani/screenshot"
@@ -64,6 +65,10 @@ func main() {
 	display := flag.Int("display", 0, "display index to capture")
 	record := flag.String("record", "", "record session to file (H.264)")
 	password := flag.String("password", "", "unattended password")
+	passwordFile := flag.String("password-file", "",
+		"read the unattended password from a file (keeps it out of the process list)")
+	listPeers := flag.String("list-peers", "",
+		"list the peers registered with a rendezvous server")
 	readOnly := flag.Bool("read-only", false, "disable remote input (view-only)")
 	rendezvous := flag.String("rendezvous", "", "rendezvous base URL (e.g. http://host:8080)")
 	list := flag.Bool("list", false, "list peers")
@@ -95,6 +100,26 @@ func main() {
 		return
 	}
 
+	if *listPeers != "" {
+		// Listing the registry needs a signed request, so the launcher calls
+		// the agent instead of fetching the list itself.
+		client := relayHTTPClient(*relayInsecure, *relayCA)
+		resp, err := peerauth.Send(client, http.MethodGet,
+			strings.TrimRight(*listPeers, "/")+"/peers", nil, id.PrivateKey, "")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "list-peers:", err)
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		if resp.StatusCode != http.StatusOK {
+			fmt.Fprintln(os.Stderr, "list-peers:", resp.Status, strings.TrimSpace(string(body)))
+			os.Exit(1)
+		}
+		fmt.Println(strings.TrimSpace(string(body)))
+		return
+	}
+
 	store := peers.New("")
 	if *list {
 		for _, p := range store.Peers {
@@ -105,7 +130,7 @@ func main() {
 
 	if *agent || *hostMode || *ui {
 		fmt.Println("host agent starting — peer id:", id.Formatted())
-		pw := *password
+		pw := resolvePassword(*password, *passwordFile)
 		if pw == "" {
 			pw = randomPassword()
 			fmt.Println("No password supplied — generated one for this session.")
@@ -165,7 +190,11 @@ func main() {
 						"caps": map[string]any{"host": true},
 						"addr": fmt.Sprintf("%s:%d", ag.LANIP, *port),
 					})
-					resp, err := rendezvousClient.Post(*rendezvous+"/register", "application/json", bytes.NewReader(body))
+					// The registration is signed with the device key, so
+					// nobody else can overwrite this peer ID in the
+					// rendezvous registry.
+					resp, err := peerauth.Send(rendezvousClient, http.MethodPost,
+						*rendezvous+"/register", body, id.PrivateKey, "application/json")
 					if err == nil {
 						resp.Body.Close()
 					}
@@ -177,15 +206,16 @@ func main() {
 			go (&relay.Client{
 				Rendezvous: *rendezvous,
 				PeerID:     ag.PeerID,
-				Password:   pw,
+				PrivateKey: id.PrivateKey,
 				LocalPort:  *port,
 				Insecure:   *relayInsecure,
 				CAFile:     *relayCA,
+				Secret:     ag.RelaySecret(),
 			}).Run()
-			go ag.RunSignaling(*rendezvous)
 			go func() {
 				time.Sleep(2 * time.Second)
-				resp, err := rendezvousClient.Get(*rendezvous + "/policy?peerId=" + id.Formatted())
+				resp, err := peerauth.Send(rendezvousClient, http.MethodGet,
+					*rendezvous+"/policy?peerId="+id.Formatted(), nil, id.PrivateKey, "")
 				if err != nil || resp.StatusCode != 200 {
 					if resp != nil {
 						resp.Body.Close()
@@ -288,17 +318,19 @@ func main() {
 				return
 			}
 			path := filepath.Join(dir, "com.eminentailabs.officerdp.plist")
+			// The password is read from a 0600 file, so it never shows up in
+			// the process list.
 			content := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>com.eminentailabs.officerdp</string>
 <key>ProgramArguments</key><array>
 <string>%s</string><string>--host</string><string>--port</string><string>8088</string>
-<string>--password</string><string>%s</string>
+<string>--password-file</string><string>%s</string>
 </array>
 <key>RunAtLoad</key><true/>
 <key>KeepAlive</key><true/>
-</dict></plist>`, html.EscapeString(exe), html.EscapeString(password))
+</dict></plist>`, html.EscapeString(exe), html.EscapeString(servicePasswordPath()))
 			// Fixed user LaunchAgents path; password comes from a 0600 file.
 			if err := os.WriteFile(path, []byte(content), 0o600); err != nil { // #nosec G306 G703
 				fmt.Fprintln(os.Stderr, "install:", err)
@@ -317,11 +349,11 @@ func main() {
 			content := fmt.Sprintf(`[Unit]
 Description=RDP Link host agent
 [Service]
-ExecStart=%s --host --port 8088 --password %s
+ExecStart=%s --host --port 8088 --password-file %s
 Restart=always
 [Install]
 WantedBy=default.target
-`, exe, password)
+`, exe, servicePasswordPath())
 			// Fixed systemd user unit path; password comes from a 0600 file.
 			if err := os.WriteFile(path, []byte(content), 0o600); err != nil { // #nosec G306 G703
 				fmt.Fprintln(os.Stderr, "install:", err)
@@ -347,11 +379,16 @@ WantedBy=default.target
 	fmt.Println("Use --help for commands.")
 }
 
+// servicePasswordPath is where the unattended password is stored.
+func servicePasswordPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "office-rdp", "service-password")
+}
+
 // servicePassword persists a password for unattended access so restarts keep
 // the same credential.
 func servicePassword() string {
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, ".config", "office-rdp", "service-password")
+	path := servicePasswordPath()
 	if data, err := os.ReadFile(path); err == nil { // #nosec G304
 		if pw := strings.TrimSpace(string(data)); pw != "" {
 			return pw
@@ -362,6 +399,23 @@ func servicePassword() string {
 		_ = os.WriteFile(path, []byte(pw+"\n"), 0o600) // #nosec G304 G306
 	}
 	return pw
+}
+
+// resolvePassword reads the access password from the flag, a file or the
+// environment, in that order. A file or environment variable keeps the
+// password out of the process list.
+func resolvePassword(flagValue, file string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if file != "" {
+		if data, err := os.ReadFile(file); err == nil { // #nosec G304 -- operator supplied
+			if pw := strings.TrimSpace(string(data)); pw != "" {
+				return pw
+			}
+		}
+	}
+	return strings.TrimSpace(os.Getenv("RDPLINK_PASSWORD"))
 }
 
 func randomPassword() string {

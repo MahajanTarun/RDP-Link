@@ -5,9 +5,11 @@ go 1.26.0
 toolchain go1.26.10
 
 require (
+	github.com/go-vgo/robotgo v1.3.7
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/mdns v1.0.7
-	github.com/pion/webrtc/v4 v4.2.26
+	github.com/kbinani/screenshot v0.0.0-20250624051815-089614a94018
+	github.com/pion/mediadevices v0.10.1
 )
 
 require (
@@ -15,12 +17,10 @@ require (
 	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/gen2brain/shm v0.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/go-vgo/robotgo v1.3.7 // indirect
 	github.com/godbus/dbus/v5 v5.2.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/jezek/xgb v1.3.1 // indirect
 	github.com/jezek/xgbutil v0.0.0-20260124183602-9fd151d6a51a // indirect
-	github.com/kbinani/screenshot v0.0.0-20250624051815-089614a94018 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260802145828-341c2f0c90b5 // indirect
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e // indirect
 	github.com/miekg/dns v1.1.72 // indirect
@@ -31,7 +31,6 @@ require (
 	github.com/pion/interceptor v0.1.51 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/mdns/v2 v2.2.2 // indirect
-	github.com/pion/mediadevices v0.10.1 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.20 // indirect
 	github.com/pion/rtp v1.10.6 // indirect
@@ -41,6 +40,7 @@ require (
 	github.com/pion/stun/v4 v4.0.1 // indirect
 	github.com/pion/transport/v5 v5.1.4 // indirect
 	github.com/pion/turn/v5 v5.1.3 // indirect
+	github.com/pion/webrtc/v4 v4.2.26 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260916203055-22a1a467d9f0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.9 // indirect
 	github.com/tailscale/win v0.0.0-20260619195133-2d76c33a64c1 // indirect

@@ -27,6 +27,24 @@ or **Setup & permissions** on Android.
 | **Android** | Accessibility, notifications, battery optimisation status | **Setup & permissions** dialog with deep links |
 | | Screen-capture consent | explained; Android requires per-session approval |
 
+## Authentication after installation
+
+The host asks for an access password once; everything else is automatic.
+
+- The **desktop launcher** stores the password in a `0600` file and starts the
+  agent with `--password-file`, so the password never appears in the process
+  list.
+- The **browser guest** exchanges the password for an `HttpOnly`,
+  `SameSite=Strict` session cookie (`POST /session`); the password itself is
+  never part of a URL, so it stays out of the browser history and out of
+  `Referer` headers.
+- **Media players** that cannot send headers (`ffplay`) receive a short-lived
+  session token instead of the password.
+- The **rendezvous** only accepts requests that are signed with the device's
+  Ed25519 key, so nobody can register or hijack a peer ID.
+
+See [`SECURITY.md`](SECURITY.md) for the full model.
+
 ## What still needs one user tap (OS security)
 
 - macOS: **Screen Recording**, **Accessibility**, **Camera**, **Microphone**,

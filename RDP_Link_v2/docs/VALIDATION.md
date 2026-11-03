@@ -59,12 +59,14 @@ $ curl -s 'http://192.168.1.14:18080/resolve?peerId=033976933'
  "url":"http://192.168.1.14:18080/t/033976933/"}
 
 $ curl -s -o f.jpg -w '%{http_code} %{size_download}\n' \
-    'http://192.168.1.14:18080/t/033976933/frame.jpg?password=relay1'
+    -H "X-Office-Password: relay1" \
+    'http://192.168.1.14:18080/t/033976933/frame.jpg'
 200 26603
 
 # TLS relay
 $ curl -sk -o /dev/null -w '%{http_code}\n' \
-    'https://127.0.0.1:18443/t/033976933/frame.jpg?password=relay2'
+    -H "X-Office-Password: relay2" \
+    'https://127.0.0.1:18443/t/033976933/frame.jpg'
 200
 ```
 
@@ -129,6 +131,43 @@ Verified: 100 % on a 1280×800 stream produced a 1280×800 frame with a
 scrollable stage; the physical Android phone rendered the macOS host in
 landscape at 1512×982 · 9 fps and switched to 100 % (native 1512×982, cropped
 and scrollable) from the same scale selector.
+
+## Security hardening (2026-11-03)
+
+A full code review produced six findings; all six are fixed and verified.
+
+| # | Finding | Fix | Evidence |
+| --- | --- | --- | --- |
+| 1 | **Relay deadlock**: a guest that left an audio/camera stream kept the host streaming; the reply buffer filled and the reader blocked, freezing the whole tunnel | Non-blocking reader, `pending` entry always released, `cancel` frame sent to the host on disconnect, host cancels the local request | `TestReadLoopNeverBlocksOnAbandonedStream`, `TestProxyReleasesPendingEntry`, `TestStreamStopsWhenCancelled`; live relay: the audio stream was aborted after 3 s, the host `ffmpeg` was gone and the tunnel still served frames and a second stream |
+| 2 | **Unauthenticated rendezvous**: anybody could register a peer ID, list the registry or rewrite a peer's policy | Ed25519 request signing (`core/peerauth`); the peer ID must match the signing key; key pinning; `/peers` needs a signature; `/resolve` is rate limited | `TestRegisterRequiresSignature`, `TestPeerCannotClaimAnotherPeerID`, `TestPolicyIsPerPeer`; live: anonymous `/peers` -> 401, `office-rdp --list-peers` -> the registry |
+| 3 | **Password in URLs and process lists**: `?password=` in every device URL, `--password` in the argv, password in `Referer` | `POST /session` -> HttpOnly `SameSite=Strict` cookie; `X-Office-Password` header; `?token=` for header-less players; `--password-file` for services and the launcher | `TestPasswordInQueryIsRejected`, `TestSessionCookieAndToken`; live: `?password=` -> 401, cookie -> 200, token -> 200 |
+| 4 | **Permissive WebSocket origin and open `/info`** | `Origin` check on upgrades and on state-changing requests; `/info` and `/displays` require credentials; bounded throttle table; `X-Forwarded-For` only trusted with the per-process relay secret | `TestCrossOriginRequestRejected`, `TestForwardedForNeedsRelaySecret`, `TestFailureTableIsBounded` |
+| 5 | **Shell injection in the setup assistant** (the workspace path contains an apostrophe) | `shlex.quote` plus AppleScript escaping | `test_mac_firewall_script_quotes_paths_with_spaces`, `test_mac_firewall_script_escapes_quotes`; the generated script was executed with `osascript` and the path arrived intact |
+| 6 | **Dead WebRTC signalling** (`ws`/`wss` bug, `/signal` route, `pion/webrtc` dependency) | Removed the signalling/transport/protocol packages, the `/signal` route and the WebRTC client page; the relay page now explains itself | `go build ./...` clean, `go.mod` no longer lists `pion/webrtc` as a direct dependency |
+
+Additional fixes from the same review:
+
+- **Browser guest file transfer**: the browser viewer had no upload/download
+  UI even though the hosts exposed `/files`, `/upload` and `/download`. The
+  Devices drawer now has a **Files** section; the desktop viewer passes the
+  file name explicitly (`?name=`), so uploads to the Android host keep their
+  name instead of becoming `upload.bin`.
+- **Tk viewer responsiveness**: every mouse move opened a new TCP connection
+  on the UI thread. Input now goes through a background sender that keeps the
+  connection alive, coalesces pointer moves (40 ms) and never blocks Tk.
+  Window resizing is debounced (60 ms) instead of re-scaling the frame on
+  every intermediate size.
+- **Android host CPU**: the host encoded a full-screen PNG **and** a JPEG for
+  every captured frame. PNG is now encoded on demand, the bitmaps are reused,
+  and `/frame.jpg` returns an `ETag` with `304 Not Modified` for a static
+  screen.
+- **Port proxy**: `/port/<p>/` now uses a reverse proxy, so cookies,
+  redirects and root-relative assets keep working under the prefix.
+- **Clipboard on Android**: clipboard reads and writes happen on the main
+  thread, which is required from Android 10 onwards.
+- **Android host serves the guest UI**: the viewer page and the logo are
+  copied into the app assets, so an Android host can be opened from any
+  browser.
 
 ## Evidence
 

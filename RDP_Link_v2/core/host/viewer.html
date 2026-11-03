@@ -296,6 +296,17 @@
       <div class="row" id="portLinks"></div>
       <p class="muted">Only ports allow-listed with --forward are reachable.</p>
     </section>
+
+    <section id="secFiles">
+      <h3>Files</h3>
+      <div class="row">
+        <input id="fileInput" type="file" hidden />
+        <button id="fileUpload">Upload…</button>
+        <button id="fileRefresh">Refresh</button>
+      </div>
+      <div id="fileList" class="muted">No files yet.</div>
+      <p class="muted">Files are exchanged through the host's shared inbox.</p>
+    </section>
   </aside>
 
   <div id="keys">
@@ -347,6 +358,20 @@
   };
 
   const authHeaders = () => password ? { 'X-Office-Password': password } : {};
+
+  // The password is exchanged for an HttpOnly session cookie, so it never
+  // travels in a URL, in the browser history or in a Referer header.
+  async function startSession(pw) {
+    try {
+      const res = await fetch('session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Office-Password': pw },
+        body: JSON.stringify({ password: pw }),
+        credentials: 'same-origin'
+      });
+      return res.ok;
+    } catch (e) { return false; }
+  }
 
   function setStatus(text, kind) {
     statusEl.textContent = text;
@@ -451,10 +476,19 @@
     setStatus(`${frameW}×${frameH} · ${fps} fps`, 'live');
   }, 1000);
 
-  function connect() {
+  async function connect() {
     password = pwInput.value.trim();
     if (!password) { errEl.textContent = 'Enter the access password.'; return; }
+    const ok = await startSession(password);
+    if (!ok) {
+      errEl.textContent = 'Wrong password.';
+      return;
+    }
     sessionStorage.setItem(STORE_KEY, password);
+    begin();
+  }
+
+  function begin() {
     connected = true;
     $('btnDisc').disabled = false;
     setStatus('Connecting…', 'warn');
@@ -657,7 +691,9 @@
     ? location.pathname : location.pathname + '/';
   const wsBase = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
     location.host + basePath;
-  const withPw = (path) => path + (password ? '?password=' + encodeURIComponent(password) : '');
+  // Media elements, WebSockets and links authenticate with the session
+  // cookie, so no credential is ever put into a URL.
+  const withPw = (path) => path;
 
   let audioEl = null, micWS = null, micRecorder = null, serialWS = null;
 
@@ -690,7 +726,7 @@
   $('btnDevices').addEventListener('click', () => {
     const panel = $('devices');
     panel.classList.toggle('open');
-    if (panel.classList.contains('open')) { loadCaps(); refreshUSB(); }
+    if (panel.classList.contains('open')) { loadCaps(); refreshUSB(); refreshFiles(); }
   });
   $('devClose').addEventListener('click', () => $('devices').classList.remove('open'));
 
@@ -739,7 +775,7 @@
   $('cameraStart').addEventListener('click', () => {
     const img = $('cameraImg');
     img.hidden = false;
-    img.src = withPw('camera.mjpg') + '&t=' + Date.now();
+    img.src = withPw('camera.mjpg?t=' + Date.now());
     $('cameraState').textContent = 'Streaming host camera';
   });
   $('cameraStop').addEventListener('click', () => {
@@ -850,6 +886,49 @@
   }
   $('shareCamStop').addEventListener('click', stopShareCam);
 
+  // -- files --------------------------------------------------------------
+  async function refreshFiles() {
+    const list = $('fileList');
+    try {
+      const res = await fetch('files', { headers: authHeaders(), cache: 'no-store' });
+      if (!res.ok) throw new Error('files ' + res.status);
+      const names = await res.json();
+      list.innerHTML = '';
+      if (!names.length) { list.textContent = 'No files yet.'; return; }
+      names.forEach((name) => {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.alignItems = 'center';
+        row.style.margin = '4px 0';
+        const link = document.createElement('a');
+        link.href = 'download?name=' + encodeURIComponent(name);
+        link.textContent = name;
+        link.style.flex = '1';
+        link.setAttribute('download', name);
+        row.appendChild(link);
+        list.appendChild(row);
+      });
+    } catch (e) {
+      list.textContent = 'File list unavailable.';
+    }
+  }
+  $('fileRefresh').addEventListener('click', refreshFiles);
+  $('fileUpload').addEventListener('click', () => $('fileInput').click());
+  $('fileInput').addEventListener('change', async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file, file.name);
+    try {
+      const res = await fetch('upload?name=' + encodeURIComponent(file.name), {
+        method: 'POST', body: form, headers: authHeaders(), credentials: 'same-origin'
+      });
+      toast(res.ok ? ('Uploaded ' + file.name) : ('Upload failed: ' + res.status));
+      if (res.ok) refreshFiles();
+    } catch (e) { toast('Upload failed'); }
+    ev.target.value = '';
+  });
+
   $('serialIn').addEventListener('keydown', (ev) => {
     if (ev.key !== 'Enter') return;
     ev.preventDefault();
@@ -860,15 +939,19 @@
   });
 
   pwInput.value = password;
-  if (password) {
-    connected = true;
-    $('btnDisc').disabled = false;
-    setStatus('Connecting…', 'warn');
-    loadDisplays();
-    loop();
-  } else {
-    showOverlay();
-  }
+  (async () => {
+    if (password) {
+      if (await startSession(password)) { begin(); return; }
+      // The stored password no longer works: ask again.
+      sessionStorage.removeItem(STORE_KEY);
+      password = '';
+      pwInput.value = '';
+      showOverlay('The stored password was rejected.');
+      return;
+    }
+    // A session cookie may still be valid after a reload.
+    begin();
+  })();
 })();
 </script>
 </body>

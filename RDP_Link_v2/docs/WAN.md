@@ -41,13 +41,14 @@ office-rdp --host --port 8088 --password <secret> \
 The host:
 
 1. registers its peer ID (every 30 s),
-2. opens the outbound tunnel (`/tunnel?peerId=…&token=…`),
+2. opens the outbound tunnel (`/tunnel?peerId=…`),
 3. reconnects automatically with backoff if the network drops or the IP changes.
 
-The tunnel token is derived from the peer ID and the access password
-(`sha256("rdp-link-tunnel:<peerID>:<password>")`). Changing the password
-requires the relay to forget the peer (restart it, since bindings are in
-memory).
+Both requests are **signed with the device's Ed25519 key**. The peer ID is
+derived from that key, so the relay can verify that the host owns the ID it
+claims: nobody else can register somebody else's peer ID, hijack a tunnel or
+change a peer's policy. The signature covers the method, the request URI, a
+timestamp (five minute window) and a hash of the body.
 
 For a self-signed relay during testing:
 
@@ -81,14 +82,19 @@ the app resolves it to the relay URL automatically.
 | Transport | WebSocket (`ws://` or `wss://`) carrying base64 HTTP requests |
 | Request size | 32 MiB per request/response over the relay |
 | Concurrency | Up to 6 in-flight requests per host |
-| Auth | Host password still enforced end-to-end by the host |
+| Auth | Host password still enforced end-to-end by the host; the relay only accepts signed requests from the host |
+| Registry | `/peers` needs a signed request (`office-rdp --list-peers <relay>`); `/resolve` is open but rate limited |
 | Encryption | TLS between host↔relay and guest↔relay; the relay terminates TLS |
 | Multiple hosts | One tunnel per peer ID; a second connection is rejected |
 
 **Trust model:** the relay sees request/response bodies because it terminates
 TLS. Run it yourself, or use one you trust. For end-to-end encryption without
-trusting the relay, use an overlay network (Tailscale/WireGuard) or the WebRTC
-media path; the HTTP relay is deliberately simple.
+trusting the relay, use an overlay network (Tailscale/WireGuard); the HTTP
+relay is deliberately simple.
+
+**Stream cleanup:** when a guest closes an audio or camera stream, the relay
+sends a cancel frame to the host, which stops the capture immediately and
+releases the device. An abandoned stream can no longer stall the tunnel.
 
 ## 5. Testing a WAN-style path locally
 
@@ -103,7 +109,14 @@ office-rdp --host --test-pattern --port 18530 --password relay1 \
 # terminal 3 — resolve + fetch through the relay
 curl -s 'http://192.168.1.14:18080/resolve?peerId=033976933'
 curl -s -o f.jpg -w '%{http_code} %{size_download}\n' \
-  'http://192.168.1.14:18080/t/033976933/frame.jpg?password=relay1'
+  -H "X-Office-Password: relay1" \
+  'http://192.168.1.14:18080/t/033976933/frame.jpg'
+
+# the browser flow: exchange the password for a session cookie
+curl -s -c jar.txt -X POST -H "X-Office-Password: relay1" \
+  -H 'Content-Type: application/json' -d '{"password":"relay1"}' \
+  'http://192.168.1.14:18080/t/033976933/session'
+curl -s -b jar.txt -o f.jpg 'http://192.168.1.14:18080/t/033976933/frame.jpg'
 ```
 
 TLS variant: add `--tls-cert/--tls-key` to the relay, `--relay-insecure` (or

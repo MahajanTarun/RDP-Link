@@ -24,6 +24,7 @@ import android.os.IBinder
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
 import org.json.JSONObject
+import android.os.Looper
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -31,10 +32,12 @@ import java.io.FileInputStream
 import java.net.HttpURLConnection
 import java.net.NetworkInterface
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import java.util.zip.CRC32
 
 class HostService : Service() {
     companion object {
@@ -42,6 +45,8 @@ class HostService : Service() {
         const val EXTRA_PORT = "port"
         const val DEFAULT_PORT = 8088
         const val VERSION = "0.2.0"
+        const val SESSION_COOKIE = "rdplink_sid"
+        const val SESSION_TTL_MS = 12L * 60 * 60 * 1000
     }
 
     private var projection: MediaProjection? = null
@@ -50,8 +55,17 @@ class HostService : Service() {
     private var captureThread: HandlerThread? = null
     private val latestFrame = AtomicReference<ByteArray?>(null)
     private val latestJpeg = AtomicReference<ByteArray?>(null)
+    private val frameEtag = AtomicReference("")
     private val frameWidth = AtomicInteger(0)
     private val frameHeight = AtomicInteger(0)
+    // The captured frame is kept as a bitmap and encoded on demand: encoding
+    // a full screen PNG on every frame cost hundreds of milliseconds of CPU
+    // and was never used by the viewers.
+    private val frameBitmap = AtomicReference<android.graphics.Bitmap?>(null)
+    private val frameLock = Any()
+    private var paddedBitmap: Bitmap? = null
+    private var croppedBitmap: Bitmap? = null
+    private var cropCanvas: android.graphics.Canvas? = null
     private var server: HostServer? = null
     private var heartbeat: java.util.concurrent.ScheduledExecutorService? = null
     private var peerId: String = ""
@@ -62,7 +76,8 @@ class HostService : Service() {
         startForegroundCompat(notification())
         val port = getSharedPreferences("officerdp", MODE_PRIVATE)
             .getInt("port", DEFAULT_PORT)
-        server = HostServer(this, latestFrame, latestJpeg, frameWidth, frameHeight, peerId, port)
+        server = HostServer(this, latestFrame, latestJpeg, frameEtag,
+            frameWidth, frameHeight, peerId, port)
         try {
             server?.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
         } catch (e: Exception) {
@@ -121,17 +136,36 @@ class HostService : Service() {
                 val rowStride = plane.rowStride
                 val rowPadding = rowStride - pixelStride * width
                 val paddedWidth = width + rowPadding / pixelStride
-                val bmp = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
-                bmp.copyPixelsFromBuffer(buffer)
-                val cropped = Bitmap.createBitmap(bmp, 0, 0, width, height)
-                val png = ByteArrayOutputStream()
-                cropped.compress(Bitmap.CompressFormat.PNG, 100, png)
-                latestFrame.set(png.toByteArray())
-                val jpeg = ByteArrayOutputStream()
-                cropped.compress(Bitmap.CompressFormat.JPEG, 70, jpeg)
-                latestJpeg.set(jpeg.toByteArray())
-                cropped.recycle()
-                bmp.recycle()
+                // The bitmaps are allocated once and reused, so a frame does
+                // not allocate ten megabytes of garbage every 90 ms.
+                synchronized(frameLock) {
+                    // The bitmaps are allocated once and reused, so a frame
+                    // does not allocate ten megabytes of garbage.
+                    var padded = paddedBitmap
+                    if (padded == null || padded.width != paddedWidth) {
+                        padded = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
+                        paddedBitmap = padded
+                        croppedBitmap = null
+                        cropCanvas = null
+                    }
+                    var cropped = croppedBitmap
+                    if (cropped == null) {
+                        cropped = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                        croppedBitmap = cropped
+                        cropCanvas = android.graphics.Canvas(cropped)
+                    }
+                    padded.copyPixelsFromBuffer(buffer)
+                    cropCanvas!!.drawBitmap(padded, 0f, 0f, null)
+                    val jpeg = ByteArrayOutputStream()
+                    cropped.compress(Bitmap.CompressFormat.JPEG, 70, jpeg)
+                    val bytes = jpeg.toByteArray()
+                    val crc = CRC32()
+                    crc.update(bytes)
+                    latestJpeg.set(bytes)
+                    frameEtag.set("\"j${java.lang.Long.toHexString(crc.value)}\"")
+                    frameBitmap.set(cropped)
+                    latestFrame.set(null)
+                }
             } catch (e: Exception) {
                 audit("frame encode failed: ${e.message}")
             } finally {
@@ -209,14 +243,27 @@ class HostService : Service() {
                 .put("status", "online")
                 .put("addr", addr)
                 .put("caps", JSONObject().put("host", true).put("input", true).put("platform", "android"))
-            val url = URL(rendezvous.trimEnd('/') + "/register")
-            val conn = url.openConnection() as HttpURLConnection
+            val text = body.toString()
+            val url = rendezvous.trimEnd('/') + "/register"
+            val conn = URL(url).openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.outputStream.use { it.write(body.toString().toByteArray()) }
+            // Signed with the device key: the rendezvous only accepts a
+            // registration that proves ownership of the peer ID.
+            try {
+                val headers = JSONObject(
+                    mobile.Mobile.signRequest(filesDir.absolutePath, "POST", url, text)
+                )
+                headers.keys().forEach { key ->
+                    conn.setRequestProperty(key, headers.getString(key))
+                }
+            } catch (e: Throwable) {
+                audit("sign failed: ${e.message}")
+            }
+            conn.outputStream.use { it.write(text.toByteArray()) }
             val code = conn.responseCode
             conn.disconnect()
             audit("rendezvous register: $code")
@@ -236,6 +283,20 @@ class HostService : Service() {
         }
     }
 
+    /** Encodes the current frame as PNG. Rarely used, so it is done on demand. */
+    fun encodeFramePng(): ByteArray? {
+        synchronized(frameLock) {
+            val bitmap = frameBitmap.get() ?: return null
+            return try {
+                val out = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                out.toByteArray()
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
     private fun audit(message: String) {
         android.util.Log.i("OfficeRDP", message)
         try {
@@ -250,29 +311,101 @@ class HostService : Service() {
         private val service: HostService,
         private val frameRef: AtomicReference<ByteArray?>,
         private val jpegRef: AtomicReference<ByteArray?>,
+        private val etagRef: AtomicReference<String>,
         private val frameWidth: AtomicInteger,
         private val frameHeight: AtomicInteger,
         private val peerId: String,
         port: Int
     ) : NanoHTTPD(port) {
+        private val sessions = ConcurrentHashMap<String, Long>()
         private val password: String
             get() = service.getSharedPreferences("officerdp", MODE_PRIVATE)
                 .getString("password", "") ?: ""
 
+        private fun constantEquals(a: String, b: String): Boolean {
+            if (a.length != b.length) return false
+            var diff = 0
+            for (i in a.indices) diff = diff or (a[i].code xor b[i].code)
+            return diff == 0
+        }
+
+        private fun sessionToken(session: IHTTPSession): String? {
+            session.parameters["token"]?.firstOrNull()?.let { return it }
+            val cookie = session.headers["cookie"] ?: return null
+            return cookie.split(";").map { it.trim() }
+                .firstOrNull { it.startsWith("$SESSION_COOKIE=") }
+                ?.substringAfter("=")
+        }
+
+        private fun isValidSession(token: String): Boolean {
+            if (token.isEmpty()) return false
+            val expiry = sessions[token] ?: return false
+            if (expiry < System.currentTimeMillis()) {
+                sessions.remove(token)
+                return false
+            }
+            return true
+        }
+
+        // authorized accepts the access password as a header, or a session
+        // token as a cookie or query parameter. The password itself is never
+        // accepted from a URL.
         private fun authorized(session: IHTTPSession): Boolean {
             val expected = password
             if (expected.isEmpty()) return false
-            val supplied = session.parameters["password"]?.firstOrNull()
-                ?: session.headers["x-office-password"]
+            session.headers["x-office-password"]?.let {
+                return constantEquals(expected, it)
+            }
+            val token = sessionToken(session)
+            return token != null && isValidSession(token)
+        }
+
+        private fun handleSession(session: IHTTPSession): Response {
+            if (session.method != NanoHTTPD.Method.POST) {
+                return newFixedLengthResponse(
+                    Response.Status.METHOD_NOT_ALLOWED, "text/plain", "method"
+                )
+            }
+            val expected = password
+            val supplied = session.headers["x-office-password"]
+                ?: session.parameters["password"]?.firstOrNull()
                 ?: ""
-            if (supplied.length != expected.length) return false
-            var diff = 0
-            for (i in expected.indices) diff = diff or (expected[i].code xor supplied[i].code)
-            return diff == 0
+            if (expected.isEmpty() || !constantEquals(expected, supplied)) {
+                return newFixedLengthResponse(
+                    Response.Status.UNAUTHORIZED, "text/plain", "unauthorized"
+                )
+            }
+            val token = java.util.UUID.randomUUID().toString().replace("-", "")
+            sessions[token] = System.currentTimeMillis() + SESSION_TTL_MS
+            val response = newFixedLengthResponse(
+                Response.Status.OK, "application/json",
+                JSONObject().put("token", token).toString()
+            )
+            response.addHeader(
+                "Set-Cookie",
+                "$SESSION_COOKIE=$token; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200"
+            )
+            return response
         }
 
         override fun serve(session: IHTTPSession): Response {
             val uri = session.uri
+            if (uri == "/session") return handleSession(session)
+            if (uri == "/logo.png") {
+                val asset = service.assets.open("logo.png")
+                val bytes = asset.readBytes()
+                asset.close()
+                return newFixedLengthResponse(
+                    Response.Status.OK, "image/png",
+                    ByteArrayInputStream(bytes), bytes.size.toLong()
+                )
+            }
+            if (uri == "/" || uri == "/index.html") return serveViewer()
+            if (!authorized(session)) {
+                return newFixedLengthResponse(
+                    Response.Status.UNAUTHORIZED, "text/plain", "unauthorized"
+                )
+            }
             if (uri == "/info") {
                 val prefs = service.getSharedPreferences("officerdp", MODE_PRIVATE)
                 val alias = prefs.getString("alias", "Android") ?: "Android"
@@ -288,14 +421,10 @@ class HostService : Service() {
                     Response.Status.OK, "application/json", body.toString()
                 )
             }
-            if (!authorized(session)) {
-                return newFixedLengthResponse(
-                    Response.Status.UNAUTHORIZED, "text/plain", "unauthorized"
-                )
-            }
             return when (uri) {
                 "/frame.png" -> {
-                    val bytes = frameRef.get()
+                    // PNG is encoded on demand: most guests only need JPEG.
+                    val bytes = frameRef.get() ?: encodePng()
                     if (bytes == null) noFrame()
                     else newFixedLengthResponse(
                         Response.Status.OK, "image/png",
@@ -305,10 +434,23 @@ class HostService : Service() {
                 "/frame.jpg" -> {
                     val bytes = jpegRef.get()
                     if (bytes == null) noFrame()
-                    else newFixedLengthResponse(
-                        Response.Status.OK, "image/jpeg",
-                        ByteArrayInputStream(bytes), bytes.size.toLong()
-                    )
+                    else {
+                        val etag = etagRef.get()
+                        val inm = session.headers["if-none-match"]
+                        if (etag.isNotEmpty() && inm == etag) {
+                            newFixedLengthResponse(
+                                Response.Status.NOT_MODIFIED, "image/jpeg", ""
+                            )
+                        } else {
+                            val response = newFixedLengthResponse(
+                                Response.Status.OK, "image/jpeg",
+                                ByteArrayInputStream(bytes), bytes.size.toLong()
+                            )
+                            response.addHeader("ETag", etag)
+                            response.addHeader("Cache-Control", "no-store")
+                            response
+                        }
+                    }
                 }
                 "/input" -> handleInput(session)
                 "/clipboard" -> handleClipboard(session)
@@ -328,6 +470,25 @@ class HostService : Service() {
             Response.Status.SERVICE_UNAVAILABLE, "text/plain", "no frame"
         )
 
+        /** The guest UI is the same page the desktop host serves. */
+        private fun serveViewer(): Response {
+            return try {
+                val asset = service.assets.open("viewer.html")
+                val bytes = asset.readBytes()
+                asset.close()
+                newFixedLengthResponse(
+                    Response.Status.OK, "text/html; charset=utf-8",
+                    ByteArrayInputStream(bytes), bytes.size.toLong()
+                )
+            } catch (e: Exception) {
+                newFixedLengthResponse(
+                    Response.Status.NOT_FOUND, "text/plain", "no viewer"
+                )
+            }
+        }
+
+        private fun encodePng(): ByteArray? = service.encodeFramePng()
+
 
         // -- clipboard and file transfer (parity with the desktop host) ------
         private val inbox: File
@@ -343,25 +504,45 @@ class HostService : Service() {
         }
 
         private fun handleClipboard(session: IHTTPSession): Response {
-            val cm = service.getSystemService(ClipboardManager::class.java)
             if (session.method == NanoHTTPD.Method.POST) {
                 val text = try {
                     JSONObject(bodyText(session)).optString("text")
                 } catch (_: Exception) {
                     ""
                 }
-                cm.setPrimaryClip(ClipData.newPlainText("RDP Link", text))
+                // The clipboard must be touched on the main thread.
+                Handler(Looper.getMainLooper()).post {
+                    val cm = service.getSystemService(ClipboardManager::class.java)
+                    cm.setPrimaryClip(ClipData.newPlainText("RDP Link", text))
+                }
                 return newFixedLengthResponse(Response.Status.NO_CONTENT, "text/plain", "")
             }
-            val text = cm.primaryClip
-                ?.takeIf { it.itemCount > 0 }
-                ?.getItemAt(0)
-                ?.coerceToText(service)
-                ?.toString() ?: ""
+            val text = readClipboard()
             return newFixedLengthResponse(
                 Response.Status.OK, "application/json",
                 JSONObject().put("text", text).toString()
             )
+        }
+
+        /** Reads the clipboard on the main thread and waits for the result. */
+        private fun readClipboard(): String {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            val holder = arrayOfNulls<String>(1)
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    val cm = service.getSystemService(ClipboardManager::class.java)
+                    holder[0] = cm.primaryClip
+                        ?.takeIf { it.itemCount > 0 }
+                        ?.getItemAt(0)
+                        ?.coerceToText(service)
+                        ?.toString() ?: ""
+                } catch (_: Exception) {
+                    holder[0] = ""
+                }
+                latch.countDown()
+            }
+            latch.await(1, TimeUnit.SECONDS)
+            return holder[0] ?: ""
         }
 
         private fun handleFiles(): Response {
@@ -402,7 +583,9 @@ class HostService : Service() {
             } catch (_: Exception) {
             }
             val tmp = files.values.firstOrNull { it.isNotEmpty() }
-            val requested = session.parameters["name"]?.firstOrNull() ?: "upload.bin"
+            val requested = session.parameters["name"]?.firstOrNull()
+                ?.takeIf { it.isNotEmpty() }
+                ?: "upload.bin"
             val target = File(inbox, File(requested).name)
             if (tmp != null && File(tmp).isFile) {
                 File(tmp).copyTo(target, overwrite = true)

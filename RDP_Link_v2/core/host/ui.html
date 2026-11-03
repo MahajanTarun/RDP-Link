@@ -190,9 +190,32 @@
     toast._t = setTimeout(() => el.classList.remove('show'), 1600);
   };
 
+  const authHeaders = () => password ? { 'X-Office-Password': password } : {};
+
+  // Exchange the password for a session cookie so the pages opened from here
+  // (viewer, device panels) authenticate without a credential in the URL.
+  async function startSession() {
+    if (!password) return false;
+    try {
+      const res = await fetch('session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Office-Password': password },
+        body: JSON.stringify({ password }),
+        credentials: 'same-origin'
+      });
+      return res.ok;
+    } catch (_) { return false; }
+  }
+
   async function load() {
     try {
-      const res = await fetch('info', { cache: 'no-store' });
+      let res = await fetch('info', { headers: authHeaders(), cache: 'no-store' });
+      if (res.status === 401) {
+        if (await startSession()) {
+          res = await fetch('info', { cache: 'no-store', credentials: 'same-origin' });
+        }
+      }
+      if (!res.ok) throw new Error('info ' + res.status);
       info = await res.json();
       $('peerId').textContent = info.peerId || '—';
       $('lan').textContent = info.lanIp ? `${info.lanIp}:${info.port}` : '—';
@@ -259,7 +282,8 @@
     try {
       await fetch('quit', {
         method: 'POST',
-        headers: { 'X-Office-Password': password }
+        headers: authHeaders(),
+        credentials: 'same-origin'
       });
     } catch (_) {}
     $('state').textContent = 'Stopped';
@@ -267,7 +291,10 @@
     toast('Sharing stopped');
   });
 
-  load();
+  (async () => {
+    if (password) await startSession();
+    load();
+  })();
 })();
 </script>
 </body>
