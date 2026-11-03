@@ -1,0 +1,9 @@
+# Keep Docker build context small.
+.git
+dist
+app/dist
+app/build
+android
+**/__pycache__
+**/.pytest_cache
+**/*.pyc

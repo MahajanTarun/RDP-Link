@@ -1,0 +1,427 @@
+"""AnyDesk-style Office RDP panel.
+
+One card for this device (id, addresses, password, sharing controls) and one
+for connecting to a remote device. Kept independent of the RDP profile list so
+the two features can evolve separately.
+"""
+
+import json
+import os
+import random
+import shutil
+import subprocess
+import threading
+import tkinter as tk
+import urllib.parse
+import urllib.request
+from tkinter import messagebox, simpledialog, ttk
+
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "office-rdp")
+GUI_CONFIG = os.path.join(CONFIG_DIR, "gui.json")
+DEFAULT_PORT = 8088
+
+
+def find_office_binary():
+    for name in ("office-rdp", "office-rdp.exe"):
+        path = shutil.which(name)
+        if path:
+            return path
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    candidates = [
+        os.path.join(root, "dist", "macos", "Office RDP.app", "Contents", "MacOS", "office-rdp"),
+        os.path.join(root, "dist", "windows", "office-rdp.exe"),
+        os.path.join(root, "dist", "linux", "bin", "office-rdp-linux"),
+        os.path.join(root, "office-rdp"),
+        "/tmp/office-rdp",
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def _load_config():
+    try:
+        with open(GUI_CONFIG) as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def _save_config(data):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    try:
+        with open(GUI_CONFIG, "w") as fh:
+            json.dump(data, fh)
+    except Exception:
+        pass
+
+
+class OfficePanel(ttk.Frame):
+    def __init__(self, parent, status_callback=None):
+        super().__init__(parent)
+        self.status_callback = status_callback or (lambda *a, **k: None)
+        self.config_data = _load_config()
+        self.host_proc = None
+        self.port = tk.IntVar(value=int(self.config_data.get("port", DEFAULT_PORT)))
+        self.peer_id = tk.StringVar(value="—")
+        self.lan_addr = tk.StringVar(value="Not sharing")
+        self.wan_addr = tk.StringVar(value="—")
+        self.password = tk.StringVar(value=self.config_data.get("password") or self._random_password())
+        self.display = tk.StringVar(value="0")
+        self.rendezvous = tk.StringVar(value=self.config_data.get("rendezvous", ""))
+        self.target = tk.StringVar(value="")
+        self.state_text = tk.StringVar(value="Idle — not sharing this screen")
+        self.recent = list(self.config_data.get("recent", []))
+        self._style()
+        self._build()
+        self.refresh_identity()
+        self.refresh_displays()
+
+    # -- styling -------------------------------------------------------------
+    def _style(self):
+        style = ttk.Style(self)
+        style.configure("Card.TFrame", background="#ffffff")
+        style.configure("Card.TLabel", background="#ffffff")
+        style.configure("CardMuted.TLabel", background="#ffffff", foreground="#64748b")
+        style.configure("CardTitle.TLabel", background="#ffffff",
+                        font=("TkDefaultFont", 12, "bold"))
+        style.configure("Peer.TLabel", background="#ffffff",
+                        font=("TkFixedFont", 24, "bold"))
+        style.configure("Primary.TButton", padding=(14, 7))
+        style.configure("Ghost.TButton", padding=(10, 5))
+
+    def _card(self, parent, title):
+        outer = tk.Frame(parent, bg="#ffffff", highlightbackground="#e2e8f0",
+                         highlightthickness=1)
+        inner = ttk.Frame(outer, style="Card.TFrame", padding=(14, 12))
+        inner.pack(fill="both", expand=True)
+        ttk.Label(inner, text=title, style="CardTitle.TLabel").pack(anchor="w")
+        return outer, inner
+
+    # -- layout --------------------------------------------------------------
+    def _build(self):
+        self.columnconfigure(0, weight=1, uniform="col")
+        self.columnconfigure(1, weight=1, uniform="col")
+        self._build_this_device()
+        self._build_remote()
+
+    def _build_this_device(self):
+        card, body = self._card(self, "This device")
+        card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+
+        ttk.Label(body, text="Office ID", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
+        row = ttk.Frame(body, style="Card.TFrame")
+        row.pack(fill="x")
+        ttk.Label(row, textvariable=self.peer_id, style="Peer.TLabel").pack(side="left")
+        ttk.Button(row, text="Copy", style="Ghost.TButton",
+                   command=lambda: self._copy(self.peer_id.get(), "Peer ID")).pack(side="right")
+
+        ttk.Label(body, text="LAN", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
+        row = ttk.Frame(body, style="Card.TFrame")
+        row.pack(fill="x")
+        ttk.Label(row, textvariable=self.lan_addr, style="Card.TLabel").pack(side="left")
+        ttk.Button(row, text="Copy", style="Ghost.TButton",
+                   command=lambda: self._copy(self.lan_addr.get(), "LAN address")).pack(side="right")
+
+        ttk.Label(body, text="WAN", style="CardMuted.TLabel").pack(anchor="w", pady=(6, 0))
+        row = ttk.Frame(body, style="Card.TFrame")
+        row.pack(fill="x")
+        ttk.Label(row, textvariable=self.wan_addr, style="Card.TLabel").pack(side="left")
+        ttk.Button(row, text="Copy", style="Ghost.TButton",
+                   command=lambda: self._copy(self.wan_addr.get(), "WAN address")).pack(side="right")
+
+        ttk.Separator(body).pack(fill="x", pady=10)
+
+        ttk.Label(body, text="Access password", style="CardMuted.TLabel").pack(anchor="w")
+        row = ttk.Frame(body, style="Card.TFrame")
+        row.pack(fill="x", pady=(2, 0))
+        ttk.Entry(row, textvariable=self.password, show="•").pack(side="left", fill="x", expand=True)
+        ttk.Button(row, text="New", style="Ghost.TButton",
+                   command=lambda: self.password.set(self._random_password())).pack(side="left", padx=(6, 0))
+
+        row = ttk.Frame(body, style="Card.TFrame")
+        row.pack(fill="x", pady=(8, 0))
+        ttk.Label(row, text="Display", style="CardMuted.TLabel").pack(side="left")
+        self.display_box = ttk.Combobox(row, textvariable=self.display, width=3, state="readonly")
+        self.display_box.pack(side="left", padx=(6, 12))
+        ttk.Label(row, text="Port", style="CardMuted.TLabel").pack(side="left")
+        ttk.Entry(row, textvariable=self.port, width=6).pack(side="left", padx=(6, 0))
+
+        ttk.Label(body, text="Rendezvous (optional)", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
+        ttk.Entry(body, textvariable=self.rendezvous).pack(fill="x", pady=(2, 0))
+
+        row = ttk.Frame(body, style="Card.TFrame")
+        row.pack(fill="x", pady=(10, 0))
+        self.start_btn = ttk.Button(row, text="Start sharing", style="Primary.TButton",
+                                    command=self.start_host)
+        self.start_btn.pack(side="left")
+        self.stop_btn = ttk.Button(row, text="Stop", style="Ghost.TButton", command=self.stop_host)
+        self.stop_btn.pack(side="left", padx=(6, 0))
+        self.stop_btn.state(["disabled"])
+
+        row = ttk.Frame(body, style="Card.TFrame")
+        row.pack(fill="x", pady=(8, 0))
+        self.dot = tk.Canvas(row, width=10, height=10, highlightthickness=0, bg="#ffffff")
+        self.dot.pack(side="left")
+        self.dot_id = self.dot.create_oval(1, 1, 9, 9, fill="#94a3b8", outline="")
+        ttk.Label(row, textvariable=self.state_text, style="CardMuted.TLabel").pack(side="left", padx=(6, 0))
+
+    def _build_remote(self):
+        card, body = self._card(self, "Connect to a device")
+        card.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+
+        ttk.Label(body, text="Address or peer ID", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
+        ttk.Entry(body, textvariable=self.target).pack(fill="x", pady=(2, 0))
+        ttk.Label(body, text="Password", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
+        self.connect_password = tk.StringVar(value="")
+        ttk.Entry(body, textvariable=self.connect_password, show="•").pack(fill="x", pady=(2, 0))
+        ttk.Button(body, text="Connect", style="Primary.TButton",
+                   command=self.connect).pack(anchor="w", pady=(10, 0))
+
+        ttk.Label(body, text="Recent devices", style="CardMuted.TLabel").pack(anchor="w", pady=(12, 0))
+        self.recent_box = tk.Listbox(body, height=5, activestyle="none",
+                                     borderwidth=0, highlightthickness=1,
+                                     highlightbackground="#e2e8f0")
+        self.recent_box.pack(fill="both", expand=True, pady=(2, 0))
+        self.recent_box.bind("<Double-1>", lambda e: self.connect())
+        self._refresh_recent()
+
+        row = ttk.Frame(body, style="Card.TFrame")
+        row.pack(fill="x", pady=(8, 0))
+        ttk.Button(row, text="Pairing code", style="Ghost.TButton",
+                   command=self.show_pairing_code).pack(side="left")
+        ttk.Button(row, text="Wake on LAN…", style="Ghost.TButton",
+                   command=self.wake_on_lan).pack(side="left", padx=(6, 0))
+        ttk.Button(row, text="Unattended…", style="Ghost.TButton",
+                   command=self.unattended_access).pack(side="left", padx=(6, 0))
+
+    # -- identity / displays --------------------------------------------------
+    def refresh_identity(self):
+        binp = find_office_binary()
+        if not binp:
+            self.peer_id.set("office-rdp not found")
+            return
+        try:
+            out = subprocess.check_output([binp, "--id"], text=True, timeout=5).strip()
+            if out:
+                self.peer_id.set(out.splitlines()[-1])
+        except Exception:
+            self.peer_id.set("unavailable")
+
+    def refresh_displays(self):
+        binp = find_office_binary()
+        if not binp:
+            return
+        try:
+            values = subprocess.check_output([binp, "--displays"], text=True, timeout=5).split()
+        except Exception:
+            values = ["0"]
+        values = values or ["0"]
+        self.display_box.configure(values=values)
+        if self.display.get() not in values:
+            self.display.set(values[0])
+
+    # -- host ----------------------------------------------------------------
+    def start_host(self):
+        binp = find_office_binary()
+        if not binp:
+            messagebox.showerror("Office RDP", "office-rdp binary not found. Build it first.")
+            return
+        if self.host_proc is not None and self.host_proc.poll() is None:
+            self._set_state("Already sharing", "#f59e0b")
+            return
+        password = self.password.get().strip()
+        if not password:
+            messagebox.showerror("Office RDP", "Set an access password before sharing.")
+            return
+        self.config_data.update({
+            "password": password,
+            "port": int(self.port.get()),
+            "rendezvous": self.rendezvous.get().strip(),
+        })
+        _save_config(self.config_data)
+        args = [binp, "--host", "--port", str(self.port.get()),
+                "--display", str(self.display.get() or "0"),
+                "--password", password]
+        if self.rendezvous.get().strip():
+            args += ["--rendezvous", self.rendezvous.get().strip()]
+        try:
+            self.host_proc = subprocess.Popen(
+                args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+        except Exception as exc:
+            messagebox.showerror("Office RDP", str(exc))
+            return
+        self.start_btn.state(["disabled"])
+        self.stop_btn.state(["!disabled"])
+        self._set_state("Starting…", "#f59e0b")
+        threading.Thread(target=self._probe_host, daemon=True).start()
+
+    def _probe_host(self):
+        import time
+
+        port = int(self.port.get())
+        password = self.password.get().strip()
+        for _ in range(20):
+            time.sleep(0.4)
+            if self.host_proc is None or self.host_proc.poll() is not None:
+                self.after(0, lambda: self._set_state("Host exited", "#ef4444"))
+                return
+            try:
+                url = f"http://127.0.0.1:{port}/info?password={urllib.parse.quote(password)}"
+                with urllib.request.urlopen(url, timeout=2) as response:
+                    info = json.load(response)
+                lan = f"{info.get('lanIp', '')}:{info.get('port', port)}"
+                wan = f"{info.get('wanIp', '')}:{info.get('port', port)}"
+                self.after(0, lambda: self._host_ready(lan, wan))
+                return
+            except Exception:
+                continue
+        self.after(0, lambda: self._set_state("Started (no local probe)", "#f59e0b"))
+
+    def _host_ready(self, lan, wan):
+        self.lan_addr.set(lan)
+        self.wan_addr.set(wan)
+        self._set_state("Sharing this screen", "#22c55e")
+        self.status_callback(f"Office RDP sharing on {lan}")
+
+    def stop_host(self):
+        if self.host_proc is not None and self.host_proc.poll() is None:
+            self.host_proc.terminate()
+            try:
+                self.host_proc.wait(timeout=5)
+            except Exception:
+                self.host_proc.kill()
+        self.host_proc = None
+        self.lan_addr.set("Not sharing")
+        self.wan_addr.set("—")
+        self.start_btn.state(["!disabled"])
+        self.stop_btn.state(["disabled"])
+        self._set_state("Idle — not sharing this screen", "#94a3b8")
+        self.status_callback("Office RDP sharing stopped")
+
+    def _set_state(self, text, color):
+        self.state_text.set(text)
+        self.dot.itemconfigure(self.dot_id, fill=color)
+
+    # -- guest ---------------------------------------------------------------
+    def connect(self):
+        target = self.target.get().strip()
+        if not target:
+            selection = self.recent_box.curselection()
+            if selection:
+                target = self.recent_box.get(selection[0]).split("  —  ")[-1]
+        if not target:
+            messagebox.showerror("Office RDP", "Enter an address or peer ID.")
+            return
+        password = self.connect_password.get() or self.password.get()
+        if target.replace(" ", "").isdigit() and len(target.replace(" ", "")) == 9:
+            target = self._resolve_peer(target, password)
+            if not target:
+                return
+        if not target.startswith("http"):
+            target = "http://" + target
+        self._remember(target)
+        self._open_viewer(target, password)
+
+    def _resolve_peer(self, peer_id, password):
+        rendezvous = self.rendezvous.get().strip()
+        if not rendezvous:
+            rendezvous = simpledialog.askstring(
+                "Office RDP", "Rendezvous URL to resolve this peer ID:", parent=self
+            )
+            if not rendezvous:
+                return None
+            self.rendezvous.set(rendezvous)
+        try:
+            url = rendezvous.rstrip("/") + "/resolve?peerId=" + urllib.parse.quote(peer_id.replace(" ", ""))
+            with urllib.request.urlopen(url, timeout=5) as response:
+                info = json.load(response)
+        except Exception as exc:
+            messagebox.showerror("Office RDP", f"Could not resolve peer: {exc}")
+            return None
+        addr = info.get("addr") or info.get("lanIp") or ""
+        if not addr:
+            messagebox.showerror("Office RDP", "Rendezvous returned no address for this peer.")
+            return None
+        return addr
+
+    def _open_viewer(self, address, password):
+        here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        viewer = os.path.join(here, "office_viewer.py")
+        if not os.path.exists(viewer):
+            messagebox.showerror("Office RDP", "office_viewer.py not found.")
+            return
+        args = ["python3", viewer, address]
+        if password:
+            args += ["--password", password]
+        subprocess.Popen(args)
+        self.status_callback(f"Opening viewer for {address}")
+
+    def _remember(self, address):
+        if address in self.recent:
+            self.recent.remove(address)
+        self.recent.insert(0, address)
+        self.recent = self.recent[:8]
+        self.config_data["recent"] = self.recent
+        _save_config(self.config_data)
+        self._refresh_recent()
+
+    def _refresh_recent(self):
+        self.recent_box.delete(0, tk.END)
+        for item in self.recent:
+            self.recent_box.insert(tk.END, item)
+
+    # -- extra actions -------------------------------------------------------
+    def show_pairing_code(self):
+        binp = find_office_binary()
+        if not binp:
+            return
+        try:
+            out = subprocess.check_output([binp, "--pair-code"], text=True, timeout=5).strip()
+            messagebox.showinfo("Office RDP pairing code", out or "No code returned")
+        except Exception as exc:
+            messagebox.showerror("Office RDP", str(exc))
+
+    def wake_on_lan(self):
+        mac = simpledialog.askstring("Office RDP", "MAC address (aa:bb:cc:dd:ee:ff):", parent=self)
+        if not mac:
+            return
+        binp = find_office_binary()
+        if not binp:
+            return
+        try:
+            subprocess.Popen([binp, "--wake", mac])
+            self.status_callback(f"Wake packet sent to {mac}")
+        except Exception as exc:
+            messagebox.showerror("Office RDP", str(exc))
+
+    def unattended_access(self):
+        binp = find_office_binary()
+        if not binp:
+            return
+        if not messagebox.askyesno(
+            "Office RDP",
+            "Install the host agent as a background service so this device can be "
+            "reached without the app open?",
+        ):
+            return
+        try:
+            out = subprocess.check_output([binp, "--install-service"], text=True,
+                                          stderr=subprocess.STDOUT, timeout=30)
+            messagebox.showinfo("Office RDP", out or "Service installed.")
+        except Exception as exc:
+            messagebox.showerror("Office RDP", str(exc))
+
+    # -- helpers -------------------------------------------------------------
+    def _copy(self, value, label):
+        if not value or value in ("—", "Not sharing"):
+            return
+        self.clipboard_clear()
+        self.clipboard_append(value)
+        self.status_callback(f"Copied {label}")
+
+    def _random_password(self):
+        return str(random.SystemRandom().randint(100000, 999999))

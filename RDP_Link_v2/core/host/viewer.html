@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Office RDP — Viewer</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0b1220; color: #e2e8f0;
+               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  header { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+           background: #0f172a; border-bottom: 1px solid #1e293b; flex-wrap: wrap; }
+  header .brand { font-weight: 700; letter-spacing: .2px; }
+  header .brand span { color: #22c55e; }
+  #status { font-size: 12px; color: #94a3b8; margin-left: 4px; }
+  .spacer { flex: 1; }
+  button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+           border-radius: 8px; padding: 7px 11px; font-size: 13px; cursor: pointer; }
+  button:hover { background: #273449; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  button.primary:hover { background: #1d4ed8; }
+  button:disabled { opacity: .5; cursor: default; }
+
+  #stage { position: relative; flex: 1; overflow: hidden; background: #000;
+           display: flex; align-items: center; justify-content: center; touch-action: none; }
+  #frame { max-width: 100%; max-height: 100%; display: block; image-rendering: auto;
+           cursor: crosshair; }
+  #stage.actual #frame { max-width: none; max-height: none; }
+
+  #overlay { position: absolute; inset: 0; display: flex; align-items: center;
+             justify-content: center; background: rgba(2, 6, 23, .82); }
+  #overlay.hidden { display: none; }
+  .card { width: min(92vw, 380px); background: #0f172a; border: 1px solid #1e293b;
+          border-radius: 14px; padding: 20px; box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+  .card h1 { font-size: 17px; margin: 0 0 4px; }
+  .card p { font-size: 13px; color: #94a3b8; margin: 0 0 14px; line-height: 1.45; }
+  .card label { display: block; font-size: 12px; color: #94a3b8; margin: 10px 0 4px; }
+  .card input { width: 100%; padding: 10px 12px; border-radius: 8px;
+                border: 1px solid #334155; background: #020617; color: #e2e8f0;
+                font-size: 15px; font-family: ui-monospace, monospace; }
+  .card input:focus { outline: 2px solid #2563eb; outline-offset: 1px; }
+  .card .actions { display: flex; gap: 8px; margin-top: 14px; }
+  .card .actions button { flex: 1; }
+  .err { color: #f87171; font-size: 12px; min-height: 16px; margin-top: 8px; }
+
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+           background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+           padding: 8px 14px; border-radius: 999px; font-size: 12px;
+           opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  #keys { display: flex; gap: 6px; padding: 6px 10px; background: #0f172a;
+          border-top: 1px solid #1e293b; overflow-x: auto; }
+  #keys button { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+  @media (max-width: 560px) { #keys { display: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">Office <span>RDP</span></div>
+    <div id="status">Not connected</div>
+    <div class="spacer"></div>
+    <button id="btnClip" title="Sync clipboard with host">Clipboard</button>
+    <button id="btnFit" title="Toggle fit / 1:1">Fit</button>
+    <button id="btnFull" title="Fullscreen">Fullscreen</button>
+    <button id="btnDisc" disabled>Disconnect</button>
+  </header>
+
+  <div id="stage">
+    <img id="frame" alt="Remote screen" draggable="false" />
+    <div id="overlay">
+      <div class="card">
+        <h1>Connect to this device</h1>
+        <p>Enter the access password shown on the host. The password is kept in
+           this browser only.</p>
+        <label for="pw">Access password</label>
+        <input id="pw" type="password" autocomplete="current-password"
+               inputmode="numeric" placeholder="••••••" />
+        <div class="err" id="err"></div>
+        <div class="actions">
+          <button class="primary" id="btnConnect">Connect</button>
+          <button id="btnForget">Forget</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="keys">
+    <button data-key="escape">Esc</button>
+    <button data-key="tab">Tab</button>
+    <button data-key="enter">Enter</button>
+    <button data-key="backspace">Backspace</button>
+    <button data-key="delete">Del</button>
+    <button data-key="up">↑</button>
+    <button data-key="down">↓</button>
+    <button data-key="left">←</button>
+    <button data-key="right">→</button>
+    <button data-key="home">Home</button>
+    <button data-key="end">End</button>
+    <button id="btnType">Type text…</button>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const frame = $('frame'), stage = $('stage'), overlay = $('overlay');
+  const statusEl = $('status'), errEl = $('err'), toastEl = $('toast');
+  const pwInput = $('pw');
+
+  const STORE_KEY = 'officerdp.password';
+  // A launcher can pass the password in the URL fragment; it never reaches
+  // the host's logs or referrer because fragments stay in the browser.
+  const hashParams = new URLSearchParams(location.hash.slice(1));
+  let password = sessionStorage.getItem(STORE_KEY) || hashParams.get('pw') || '';
+  if (hashParams.get('pw')) {
+    sessionStorage.setItem(STORE_KEY, hashParams.get('pw'));
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  let connected = false;
+  let fitMode = true;
+  let lastUrl = null;
+  let etag = '';
+  let frameTimes = [], lastFrameAt = 0;
+  let frameW = 0, frameH = 0;
+
+  const toast = (msg) => {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => toastEl.classList.remove('show'), 1800);
+  };
+
+  const authHeaders = () => password ? { 'X-Office-Password': password } : {};
+
+  function setStatus(text) { statusEl.textContent = text; }
+
+  function showOverlay(message) {
+    if (message) errEl.textContent = message;
+    overlay.classList.remove('hidden');
+    pwInput.focus();
+  }
+
+  function hideOverlay() {
+    errEl.textContent = '';
+    overlay.classList.add('hidden');
+  }
+
+  async function fetchFrame() {
+    const headers = { ...authHeaders(), cache: 'no-store' };
+    if (etag) headers['If-None-Match'] = etag;
+    const res = await fetch('/frame.jpg', { headers, cache: 'no-store' });
+    if (res.status === 401 || res.status === 403) {
+      const e = new Error('unauthorized'); e.code = 401; throw e;
+    }
+    if (res.status === 304) return null;
+    if (!res.ok) throw new Error('frame ' + res.status);
+    etag = res.headers.get('ETag') || '';
+    return await res.blob();
+  }
+
+  function drawBlob(blob) {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        frame.src = url;
+        frameW = img.naturalWidth; frameH = img.naturalHeight;
+        if (lastUrl) URL.revokeObjectURL(lastUrl);
+        lastUrl = url;
+        resolve(true);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(false); };
+      img.src = url;
+    });
+  }
+
+  async function loop() {
+    while (connected) {
+      const started = performance.now();
+      try {
+        const blob = await fetchFrame();
+        if (blob) {
+          const ok = await drawBlob(blob);
+          if (ok) { frameTimes.push(performance.now()); lastFrameAt = Date.now(); }
+        }
+        if (!overlay.classList.contains('hidden')) hideOverlay();
+        if (lastFrameAt && Date.now() - lastFrameAt > 4000) setStatus('Reconnecting…');
+      } catch (e) {
+        if (e.code === 401) {
+          connected = false;
+          $('btnDisc').disabled = true;
+          setStatus('Disconnected');
+          showOverlay('Wrong password or sharing stopped.');
+          return;
+        }
+        setStatus('Reconnecting…');
+      }
+      // No new frame arrived: poll gently. New frame: loop again immediately.
+      const elapsed = performance.now() - started;
+      await new Promise((r) => setTimeout(r, elapsed < 40 ? 24 : 8));
+    }
+  }
+
+  setInterval(() => {
+    if (!connected) return;
+    const cutoff = performance.now() - 2000;
+    frameTimes = frameTimes.filter((t) => t >= cutoff);
+    const fps = Math.round(frameTimes.length / 2);
+    setStatus(`${frameW}×${frameH} · ${fps} fps`);
+  }, 1000);
+
+  function connect() {
+    password = pwInput.value.trim();
+    if (!password) { errEl.textContent = 'Enter the access password.'; return; }
+    sessionStorage.setItem(STORE_KEY, password);
+    connected = true;
+    $('btnDisc').disabled = false;
+    setStatus('Connecting…');
+    loop();
+  }
+
+  async function post(path, body) {
+    if (!connected) return null;
+    try {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(body)
+      });
+      return res;
+    } catch (e) { return null; }
+  }
+
+  // -- coordinate mapping ---------------------------------------------------
+  function toRemote(ev) {
+    const r = frame.getBoundingClientRect();
+    if (!frameW || !frameH) return { x: 0, y: 0 };
+    const x = Math.round((ev.clientX - r.left) / r.width * frameW);
+    const y = Math.round((ev.clientY - r.top) / r.height * frameH);
+    return {
+      x: Math.max(0, Math.min(frameW - 1, x)),
+      y: Math.max(0, Math.min(frameH - 1, y))
+    };
+  }
+
+  let moveQueued = null, moveTimer = null;
+  frame.addEventListener('mousemove', (ev) => {
+    moveQueued = toRemote(ev);
+    if (moveTimer) return;
+    moveTimer = setTimeout(() => {
+      moveTimer = null;
+      if (moveQueued) post('/input', { type: 'move', ...moveQueued });
+    }, 40);
+  });
+
+  frame.addEventListener('mousedown', (ev) => {
+    ev.preventDefault();
+    const p = toRemote(ev);
+    post('/input', { type: 'click', x: p.x, y: p.y, button: ev.button === 2 ? 3 : 1 });
+  });
+  frame.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
+  frame.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    post('/input', { type: 'wheel', delta: ev.deltaY > 0 ? -1 : 1 });
+  }, { passive: false });
+
+  // -- touch ---------------------------------------------------------------
+  let touchStart = null;
+  frame.addEventListener('touchstart', (ev) => {
+    if (ev.touches.length === 1) {
+      const t = ev.touches[0];
+      touchStart = { x: t.clientX, y: t.clientY, at: Date.now(), moved: false };
+    }
+  }, { passive: true });
+
+  frame.addEventListener('touchmove', (ev) => {
+    if (!touchStart || ev.touches.length !== 1) return;
+    const t = ev.touches[0];
+    const dx = t.clientX - touchStart.x, dy = t.clientY - touchStart.y;
+    if (Math.abs(dx) > 12 || Math.abs(dy) > 12) {
+      touchStart.moved = true;
+      post('/input', { type: 'wheel', delta: dy > 0 ? -1 : 1 });
+      touchStart.x = t.clientX; touchStart.y = t.clientY;
+    }
+  }, { passive: true });
+
+  frame.addEventListener('touchend', (ev) => {
+    if (!touchStart) return;
+    if (!touchStart.moved && Date.now() - touchStart.at < 500) {
+      const p = toRemote({ clientX: touchStart.x, clientY: touchStart.y });
+      post('/input', { type: 'click', x: p.x, y: p.y, button: 1 });
+    }
+    touchStart = null;
+  }, { passive: true });
+
+  // -- keyboard ------------------------------------------------------------
+  const SPECIAL = {
+    Enter: 'enter', Backspace: 'backspace', Escape: 'escape', Tab: 'tab',
+    Delete: 'delete', Home: 'home', End: 'end', PageUp: 'pageup',
+    PageDown: 'pagedown', ArrowUp: 'up', ArrowDown: 'down',
+    ArrowLeft: 'left', ArrowRight: 'right', ' ': 'space'
+  };
+
+  document.addEventListener('keydown', (ev) => {
+    if (!connected || ev.target === pwInput) return;
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return; // keep browser shortcuts
+    if (SPECIAL[ev.key]) {
+      ev.preventDefault();
+      post('/input', { type: 'key', key: SPECIAL[ev.key] });
+    } else if (ev.key.length === 1) {
+      ev.preventDefault();
+      post('/input', { type: 'text', text: ev.key });
+    }
+  });
+
+  document.querySelectorAll('#keys [data-key]').forEach((btn) => {
+    btn.addEventListener('click', () => post('/input', { type: 'key', key: btn.dataset.key }));
+  });
+
+  $('btnType').addEventListener('click', () => {
+    const text = prompt('Text to type on the remote device:');
+    if (text) post('/input', { type: 'text', text });
+  });
+
+  // -- clipboard -----------------------------------------------------------
+  $('btnClip').addEventListener('click', async () => {
+    try {
+      const res = await fetch('/clipboard', { headers: authHeaders(), cache: 'no-store' });
+      const data = await res.json();
+      const text = data.text || '';
+      try {
+        await navigator.clipboard.writeText(text);
+        toast(text ? 'Host clipboard copied' : 'Host clipboard is empty');
+      } catch (_) {
+        toast(text ? 'Host clipboard: ' + text.slice(0, 40) : 'Host clipboard is empty');
+      }
+    } catch (_) { toast('Clipboard unavailable'); }
+  });
+
+  // -- view controls -------------------------------------------------------
+  $('btnFit').addEventListener('click', () => {
+    fitMode = !fitMode;
+    stage.classList.toggle('actual', !fitMode);
+    $('btnFit').textContent = fitMode ? 'Fit' : '1:1';
+  });
+
+  $('btnFull').addEventListener('click', async () => {
+    try {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      else await document.exitFullscreen();
+    } catch (_) { toast('Fullscreen blocked'); }
+  });
+
+  $('btnDisc').addEventListener('click', () => {
+    connected = false;
+    $('btnDisc').disabled = true;
+    setStatus('Disconnected');
+    showOverlay('Disconnected. Enter the password to reconnect.');
+  });
+
+  $('btnConnect').addEventListener('click', connect);
+  pwInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') connect(); });
+  $('btnForget').addEventListener('click', () => {
+    sessionStorage.removeItem(STORE_KEY);
+    password = '';
+    pwInput.value = '';
+    pwInput.focus();
+    toast('Saved password cleared');
+  });
+
+  pwInput.value = password;
+  if (password) {
+    connected = true;
+    $('btnDisc').disabled = false;
+    setStatus('Connecting…');
+    loop();
+  } else {
+    showOverlay();
+  }
+})();
+</script>
+</body>
+</html>

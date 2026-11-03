@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Office RDP — This device</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: #0b1220; color: #e2e8f0;
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; padding: 14px 22px;
+           background: #0f172a; border-bottom: 1px solid #1e293b; }
+  header .brand { font-size: 17px; font-weight: 700; }
+  header .brand span { color: #22c55e; }
+  header .pill { font-size: 12px; padding: 3px 9px; border-radius: 999px;
+                 background: #14532d; color: #86efac; border: 1px solid #166534; }
+  header .pill.off { background: #3f1d1d; color: #fca5a5; border-color: #7f1d1d; }
+  main { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+         padding: 22px; max-width: 1100px; margin: 0 auto; }
+  .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 18px; }
+  .card h2 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase;
+             letter-spacing: .08em; color: #94a3b8; font-weight: 600; }
+  .label { font-size: 12px; color: #64748b; margin: 12px 0 4px; }
+  .value { display: flex; align-items: center; gap: 8px; }
+  .value code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: 15px; background: #020617; border: 1px solid #1e293b;
+                border-radius: 8px; padding: 7px 10px; flex: 1; overflow: hidden;
+                text-overflow: ellipsis; white-space: nowrap; }
+  .peer { font-size: 30px; font-weight: 700; letter-spacing: .02em;
+          font-family: ui-monospace, monospace; }
+  button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+           border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  button:hover { background: #273449; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  button.primary:hover { background: #1d4ed8; }
+  button.danger { background: #7f1d1d; border-color: #991b1b; color: #fecaca; }
+  input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155;
+          background: #020617; color: #e2e8f0; font-size: 14px; }
+  input:focus { outline: 2px solid #2563eb; outline-offset: 1px; }
+  .row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .hint { font-size: 12px; color: #64748b; margin-top: 10px; line-height: 1.5; }
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+           background: #1e293b; border: 1px solid #334155; padding: 9px 16px;
+           border-radius: 999px; font-size: 12px; opacity: 0; transition: opacity .2s; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Office <span>RDP</span></div>
+  <div id="state" class="pill">Sharing</div>
+  <div style="flex:1"></div>
+  <button id="openViewer">Open viewer</button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>This device</h2>
+    <div class="label">Office ID</div>
+    <div class="value">
+      <span id="peerId" class="peer">—</span>
+      <button data-copy="peerId">Copy</button>
+    </div>
+
+    <div class="label">LAN address</div>
+    <div class="value">
+      <code id="lan">—</code>
+      <button data-copy="lan">Copy</button>
+    </div>
+
+    <div class="label">WAN address</div>
+    <div class="value">
+      <code id="wan">—</code>
+      <button data-copy="wan">Copy</button>
+    </div>
+
+    <div class="label">Access password</div>
+    <div class="value">
+      <code id="pw">••••••</code>
+      <button id="reveal">Show</button>
+      <button data-copy="pw">Copy</button>
+    </div>
+
+    <div class="row">
+      <button class="danger" id="stop">Stop sharing</button>
+    </div>
+    <p class="hint">Guests connect with the Office ID through a rendezvous server, or
+      with the LAN address directly. Every request needs this password.</p>
+  </section>
+
+  <section class="card">
+    <h2>Connect to a device</h2>
+    <div class="label">Address, or 9-digit Office ID</div>
+    <input id="target" placeholder="192.168.1.20:8088 or 123 456 789" />
+    <div class="label">Password</div>
+    <input id="targetPw" type="password" placeholder="Access password on the host" />
+    <div class="row">
+      <button class="primary" id="connect">Connect</button>
+      <button id="clip">Paste clipboard</button>
+    </div>
+    <p class="hint" id="connectHint">The viewer opens in a new tab and keeps the
+      password in that tab only.</p>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.hash.slice(1));
+  let password = params.get('pw') || '';
+  let info = {};
+
+  const toast = (msg) => {
+    const el = $('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => el.classList.remove('show'), 1600);
+  };
+
+  async function load() {
+    try {
+      const res = await fetch('/info', { cache: 'no-store' });
+      info = await res.json();
+      $('peerId').textContent = info.peerId || '—';
+      $('lan').textContent = info.lanIp ? `${info.lanIp}:${info.port}` : '—';
+      $('wan').textContent = info.wanIp ? `${info.wanIp}:${info.port}` : '—';
+      $('state').textContent = 'Sharing';
+      $('state').classList.remove('off');
+    } catch (_) {
+      $('state').textContent = 'Offline';
+      $('state').classList.add('off');
+    }
+    $('pw').textContent = password ? '••••••' : 'not in URL';
+  }
+
+  function copy(text) {
+    if (!text) return;
+    navigator.clipboard?.writeText(text).then(
+      () => toast('Copied'),
+      () => toast('Copy blocked by the browser')
+    );
+  }
+
+  document.querySelectorAll('[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.copy;
+      if (id === 'pw') return copy(password);
+      copy($(id).textContent);
+    });
+  });
+
+  $('reveal').addEventListener('click', () => {
+    const shown = $('pw').textContent === '••••••';
+    $('pw').textContent = shown ? (password || 'not in URL') : '••••••';
+    $('reveal').textContent = shown ? 'Hide' : 'Show';
+  });
+
+  $('openViewer').addEventListener('click', () => {
+    const url = location.origin + '/' + (password ? '#pw=' + encodeURIComponent(password) : '');
+    window.open(url, '_blank', 'noopener');
+  });
+
+  $('connect').addEventListener('click', () => {
+    let target = $('target').value.trim();
+    const pw = $('targetPw').value;
+    if (!target) { toast('Enter an address or Office ID'); return; }
+    if (/^\d{3}\s?\d{3}\s?\d{3}$/.test(target)) {
+      toast('Resolving through the rendezvous server is done by the desktop launcher');
+      return;
+    }
+    if (!/^https?:\/\//.test(target)) target = 'http://' + target;
+    const url = target.replace(/\/$/, '') + '/' + (pw ? '#pw=' + encodeURIComponent(pw) : '');
+    window.open(url, '_blank', 'noopener');
+  });
+
+  $('clip').addEventListener('click', async () => {
+    try {
+      $('targetPw').value = await navigator.clipboard.readText();
+      toast('Pasted');
+    } catch (_) { toast('Clipboard read blocked'); }
+  });
+
+  $('stop').addEventListener('click', async () => {
+    if (!confirm('Stop sharing this screen?')) return;
+    try {
+      await fetch('/quit', {
+        method: 'POST',
+        headers: { 'X-Office-Password': password }
+      });
+    } catch (_) {}
+    $('state').textContent = 'Stopped';
+    $('state').classList.add('off');
+    toast('Sharing stopped');
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Build output
+/dist/
+/office-rdp
+/office-rdp.exe
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/app/officerdp.keystore
+/android/app/libs/mobile.aar
+/android/app/libs/mobile-sources.jar
+/android/.kotlin/
+/app/build/
+/app/dist/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.gradle/
+packaging/windows/optional-launcher.nsh
+*.keystore

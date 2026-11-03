@@ -1,0 +1,19 @@
+Office RDP is a self-hostable remote desktop app for phones, tablets, and desktops.
+
+Host a device:
+• Share this screen with a guest over your local network or a rendezvous server.
+• Protect the session with a password you choose.
+• See a persistent notification while sharing, with a one-tap stop action.
+
+Connect to a device:
+• Open a host address or peer ID and control it from the built-in viewer.
+• Tap and type remotely after enabling the accessibility helper.
+• Works alongside the Office RDP desktop agent for macOS, Windows, and Linux.
+
+Privacy:
+• No account and no cloud dependency. Use the public rendezvous or run your own.
+• Screen content is only sent to guests that know your password.
+• The accessibility helper injects taps and text; it does not read your screen.
+
+Office RDP is open source and designed for small teams that want a simple, direct
+remote desktop without a subscription.

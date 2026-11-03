@@ -1,0 +1,1 @@
+Share your screen and control another device on your LAN or through a rendezvous server.

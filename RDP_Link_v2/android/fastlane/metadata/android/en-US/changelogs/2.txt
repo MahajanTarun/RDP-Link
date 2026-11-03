@@ -1,0 +1,5 @@
+• Password-protected host endpoints
+• Remote tap and keyboard input through accessibility
+• JPEG frame endpoint for lower bandwidth
+• Optional rendezvous registration for WAN access
+• Foreground service hardening for Android 14+

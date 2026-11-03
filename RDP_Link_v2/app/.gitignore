@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+*.spec
+*.app/
+*.dmg
+
+# Icons (generated)
+assets/icon.iconset/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Local test scratch
+/tmp/
