@@ -78,6 +78,7 @@ audit, self-host and redistribute it under the terms in [`LICENSE`](LICENSE).
 - [How it works](#how-it-works)
 - [Quick start](#quick-start)
 - [Install per platform](#install-per-platform)
+- [Headless CLI (no GUI)](#headless-cli-no-gui)
 - [Device bridge](#device-bridge)
 - [Security model](#security-model)
 - [Command line](#command-line)
@@ -110,6 +111,11 @@ from GitHub — download, install, connect.
 | **Android** 10+ (API 29+) | [`RDPLink-android-release.apk`](releases/RDPLink-android-release.apk) · 49 MB | Sideload the APK (allow "Install unknown apps" for your file manager). |
 | **Android** (Play upload) | [`RDPLink-android-release.aab`](releases/RDPLink-android-release.aab) · 19 MB | Upload bundle for Google Play. |
 
+The Linux `.deb` and tarball also include the **headless `rdp-link` CLI** and the
+`office-rdp` agent — share, connect, capture a screenshot, read the clipboard or
+send input entirely from a terminal, with no GUI or X server. See
+[Headless CLI](#headless-cli-no-gui). The same flags work on macOS and Windows.
+
 ### Verify your download
 
 Every release file has a SHA-256 checksum in
@@ -128,13 +134,13 @@ shasum -a 256 -c SHA256SUMS        # macOS / Linux
 4094fa36600f63acb23473b3f25b0f9893bb05e5833ff0317021bbee28317aef  LICENSE
 2e026d69ae006fc4e1b35e89b62c9c74edc50d89cbf118b08ee0abe4b31f015f  RDPLink-android-release.aab
 ce89cf4c8bcfbec4d519a4d0cc23e430a25b6c5ee5c3d9a117380a4594628dbb  RDPLink-android-release.apk
-e93652b75ed1d47141db6dd9470bf4e337dc1b0077df5e337c44d2b38b70b6c6  RDPLink-installer.pkg
-31ea8f7933b16572eae821372712d47e88a30fcbf9714fb8f04f21d8e8de8804  RDPLink-macos.dmg
-91b48b4f0de7e99013eef34f9ad349b4226108f5b02c65f0f7034d55e95105e6  RDPLink-setup.exe
+75790df75da5b2de2c98855a20b64e7065afc0ff5f558e1363ae48ba057378f8  RDPLink-installer.pkg
+6ec25bdfcb9ff30797bce341774f4cb5635de101defdce08935416095deaf785  RDPLink-macos.dmg
+a861a4ea94ff2481cfec876845a5843ccf3847d23858d1ec033fc5f4eda08d8e  RDPLink-setup.exe
 79c69073d330840bbbe6531957acf4e36b348569e1fc56ea59e3ab0e1bb627b1  THIRD_PARTY_NOTICES.md
-9069f2f7e8d6a93e90d07b2469a891cd78d80b610dbbf291b652bd96d74beac8  rdplink-linux-amd64.deb
-edc130591964cded42cf39ef566b59dc3dea59b5a1f567cd57848ebab7794f5f  rdplink-linux-arm64.deb
-4264fe903e38ab3e24a5d6ac978bb23afb5fb9d8c1e74513440896243f05b313  rdplink-linux.tar.gz
+c8c9e00fae0046cc4d91d84bdc3f9523504b05e837ccd7affa9981f506bf0e7c  rdplink-linux-amd64.deb
+c0b0d1a2bd0cf9e37351010a45fb09e925000e77e5bbff25d48223e0cee91156  rdplink-linux-arm64.deb
+19f50c77f4cce8549e54440491e8aa36d3e50630c55a8c4f8828fd6167c4b67f  rdplink-linux.tar.gz
 ```
 
 </details>
@@ -167,6 +173,7 @@ talks to the rendezvous server you configure (if any). See
 | **Devices** | Speaker audio, microphone, camera preview, serial console, TCP port forwarding, USB storage sharing. |
 | **Guests** | Desktop viewer (Tk), browser viewer, full-screen Android viewer. |
 | **Hosts** | macOS, Linux (X11), Windows (GDI) and Android (MediaProjection). |
+| **Headless CLI** | `rdp-link --share/--connect/--status/--probe/--save-frame/--clipboard-*` on macOS, Linux and Windows; no tkinter, no X server, works over SSH. |
 | **Security** | Password header or `HttpOnly` session cookie, 2-minute read-only media tokens, brute-force throttling, origin checks, signed relay traffic with nonce replay protection. |
 | **Packaging** | DMG/PKG, NSIS installer, `.deb` + tarball, signed APK/AAB, CI for every platform. |
 
@@ -238,6 +245,14 @@ office-rdp --id              # 9-digit RDP Link ID
 | Desktop viewer directly | `cd app && python3 office_viewer.py http://HOST:8088 --password 'PW'` |
 | Browser | Open `http://HOST:8088/` and type the password in the page. |
 | Android | Enter `host:port` (or the 9-digit ID when a rendezvous is configured) and tap **Connect**. |
+
+Headless alternative (SSH, container, no display):
+
+```sh
+rdp-link --share --port 8088                     # host, no GUI
+rdp-link --connect HOST:8088 --password-file FILE --probe
+rdp-link --connect HOST:8088 --save-frame shot.jpg
+```
 
 ### 3. Connect over the internet (optional)
 
@@ -319,6 +334,78 @@ tar xzf rdplink-linux.tar.gz
 
 Minimum: Android 10 (API 29). Target: Android 16 (API 36).
 
+## Headless CLI (no GUI)
+
+`rdp-link` is also a full command-line client. It never imports tkinter, so it
+works over SSH, in a container, or on a server with no display. The same flags
+work on Linux, macOS and Windows; the Linux packages put `rdp-link` and
+`office-rdp` on `PATH`.
+
+```sh
+# Who am I?
+rdp-link --id                     # 9-digit RDP Link ID
+rdp-link --status                 # ID, alias, identity path, agent version
+rdp-link --status --json
+
+# Share this screen, headless (Ctrl-C to stop)
+rdp-link --share --port 8088
+rdp-link --share --port 8088 --password-file ~/.config/office-rdp/host-password
+rdp-link --share --read-only --rendezvous https://relay.example.com
+rdp-link --share --test-pattern   # synthetic frames, no screen permission
+
+# Connect and verify a host (no GUI)
+rdp-link --connect 192.168.1.20:8088 --password-file ~/.config/office-rdp/host-password
+rdp-link --connect https://relay.example.com/t/123456789/
+rdp-link --connect 123456789 --rendezvous https://relay.example.com
+
+# Headless actions against the connected host
+rdp-link --connect HOST --probe                  # fetch one frame, print size
+rdp-link --connect HOST --save-frame shot.jpg    # save a screenshot
+rdp-link --connect HOST --clipboard-get
+rdp-link --connect HOST --clipboard-set "text"
+rdp-link --connect HOST --click 640,400          # click at remote coordinates
+rdp-link --connect HOST --type "hello"           # type text
+rdp-link --connect HOST --key enter
+
+# Diagnostics and discovery
+rdp-link --doctor
+rdp-link --displays
+rdp-link --peers --rendezvous https://relay.example.com
+
+# Legacy FreeRDP profile manager (still available)
+rdp-link --list
+rdp-link --connect-profile "Profile Name"
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--connect TARGET` | Peer ID (needs `--rendezvous`), `host:port`, or an `http(s)` URL. A matching legacy profile name is connected through FreeRDP instead. |
+| `--password` / `--password-file` | Credentials; a file keeps the password out of the process list. `RDPLINK_PASSWORD` also works. |
+| `--probe` | Fetch `/frame.jpg` (or PNG fallback) and print bytes + dimensions. |
+| `--save-frame PATH` | Write one frame; the extension defaults from the content type. |
+| `--clipboard-get`, `--clipboard-set TEXT` | Read or write the host clipboard. |
+| `--click X,Y`, `--type TEXT`, `--key KEY` | Send input without a viewer. |
+| `--open` | Additionally launch the GUI viewer (opt-in). |
+| `--json` | Machine-readable output for scripts and monitoring. |
+| `--share` | Run the host agent headless; `--port`, `--display`, `--read-only`, `--test-pattern`, `--rendezvous`, `--relay-*` apply. |
+| `--doctor`, `--displays`, `--peers` | Delegate to the Go agent's diagnostics/registry commands. |
+| `--list`, `--connect-profile` | Legacy FreeRDP profiles (unchanged). |
+| `--help`, `--version` | Usage / version, no GUI import. |
+
+Exit codes: `0` success, `1` connection/authentication/runtime failure, `2`
+usage error. `--connect` prints the resolved URL, peer ID, alias and addresses
+(and JSON with `--json`), so it doubles as a health check in scripts.
+
+Example monitoring loop:
+
+```sh
+while sleep 30; do
+  rdp-link --connect 123456789 --rendezvous https://relay.example.com \
+           --password-file ~/.config/office-rdp/host-password --json \
+    || echo "host unreachable at $(date)"
+done
+```
+
 ## Device bridge
 
 Devices are **off by default** and require the host password. Availability is
@@ -380,6 +467,12 @@ The full threat model and the hardening history are in
 privately — see [`docs/SECURITY.md`](docs/SECURITY.md#reporting).
 
 ## Command line
+
+### `rdp-link` (headless launcher)
+
+The RDP Link CLI is documented in [Headless CLI](#headless-cli-no-gui). It
+covers identity/status, headless sharing, connect/probe/screenshot, clipboard,
+input and the legacy FreeRDP profiles. It does not import tkinter.
 
 ### `office-rdp`
 
@@ -453,7 +546,7 @@ bash scripts/security-scan.sh   # gosec, govulncheck, shellcheck, license audit
 bash scripts/license-audit.sh   # linked Go modules must all be permissive
 ```
 
-Current state: **80 Python tests**, all Go packages pass, race detector clean,
+Current state: **95 Python tests**, all Go packages pass, race detector clean,
 security scan clean. The methodology, devices and reproducible commands are in
 [`docs/TESTING.md`](docs/TESTING.md).
 
@@ -465,6 +558,7 @@ security scan clean. The methodology, devices and reproducible commands are in
 | Linux (Ubuntu 24.04, X11) | **Live** — real X session at 1366×768; devices verified. | **Live** — desktop and browser viewers. |
 | Windows (installer + app) | **Working under Wine** with a test pattern; real GDI capture needs Windows hardware. | **Live under Wine** — PyInstaller launcher, `--viewer --probe` returns a frame. |
 | Android 16 (SM-S711B) | **Live** — MediaProjection, accessibility input, relay tunnel. | **Live** — full-screen viewer, camera/mic origin allowlist. |
+| **Headless CLI** (macOS, Linux, Windows) | **Live** — `--share` starts the agent with no GUI; `--doctor/--displays/--peers` delegate. | **Live** — `--probe` returned a 25,060-byte 1280×800 frame, `--save-frame` wrote a JPEG, `--clipboard-set/get` round-tripped, and `--status --json` parsed; no tkinter loaded. |
 
 Last validated: **2026-11-04**. Evidence, byte counts and per-flow notes live in
 [`docs/VALIDATION.md`](docs/VALIDATION.md).
@@ -479,7 +573,7 @@ RDP_Link_v2/
 │                          clipboard, policy, host HTTP API, relay client
 ├── rendezvous/            registry, signed auth, reverse-tunnel proxy
 ├── mobile/                gomobile bindings (identity, signing, relay)
-├── app/                   Python/Tk launcher, viewer, assets, installer
+├── app/                   Python/Tk launcher, headless CLI, viewer, assets
 ├── android/               Kotlin host service, viewer, accessibility input
 ├── macos/                 TCC permission helper (Swift)
 ├── packaging/             macOS, Linux, Windows, Android build scripts

@@ -55,8 +55,8 @@ like launching `sdl-freerdp` yourself, minus the typing.
   "Stop camera & mic now" action keep you in control even mid-session.
 - **Full session log** — every FreeRDP/bridge warning lands in a session log,
   one menu click away.
-- **CLI mode** — `rdp-link --connect "Name"` connects without opening the
-  GUI at all.
+- **CLI mode** — `rdp-link --connect HOST:PORT` (or a peer ID) connects and
+  checks a host without opening the GUI; `--share` runs the host headless.
 - **Cross-platform** — client runs on macOS and Linux; hosts are any Linux
   box running xrdp.
 
@@ -130,11 +130,27 @@ so old profiles and passwords carry over untouched.
 
 ## CLI
 
+The launcher is also a full headless client — no GUI, no tkinter, no display:
+
 ```sh
-rdp-link --list                      # profiles + connection state
-rdp-link --connect "MolCon Wired"    # headless connect (no GUI)
+rdp-link --id                        # 9-digit RDP Link ID
+rdp-link --status [--json]           # local status, or --status HOST
+rdp-link --share --port 8088         # share this screen, headless
+rdp-link --connect HOST:8088         # connect + verify
+rdp-link --connect HOST --probe      # fetch one frame
+rdp-link --connect HOST --save-frame shot.jpg
+rdp-link --connect HOST --clipboard-get
+rdp-link --connect HOST --click 640,400 --type "hello"
+rdp-link --connect 123456789 --rendezvous https://relay.example.com
+rdp-link --doctor | --displays | --peers
+rdp-link --list                      # legacy FreeRDP profiles
+rdp-link --connect-profile "MolCon Wired"
 rdp-link --version
 ```
+
+`--connect` accepts a peer ID, `host:port`, an `http(s)` URL, or a legacy
+profile name. Add `--password-file` (or `RDPLINK_PASSWORD`) instead of
+`--password` to keep the credential out of the process list.
 
 macOS guests also get a `rdplink` alias for the same thing after
 `./build-app.sh`.

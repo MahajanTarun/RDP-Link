@@ -344,6 +344,39 @@ profile; its live stream could not be re-validated because the emulated
 container's Xvfb drops the X connection inside the third-party `xgb` library.
 The native arm64 package is fully validated and the code path is identical.
 
+### Headless CLI (2026-11-04)
+
+`rdp-link` was driven from a terminal with no GUI and no `DISPLAY` against a
+live macOS host (`--host --test-pattern --port 18200`):
+
+```
+$ rdp-link --help                 → full usage, tkinter not imported
+$ rdp-link --version              → RDP Link 0.2.0
+$ rdp-link --id                   → 033 976 933
+$ rdp-link --status --json        → peerId, alias, identity path, agent version
+$ rdp-link --status 127.0.0.1:18200 --password testpw
+  RDP Link ID : 033 976 933
+  Alias       : taruns-macbook-pro
+  LAN         : 192.168.1.14:18200
+  WAN         : 110.226.114.183:18200
+$ rdp-link --connect 127.0.0.1:18200 --password testpw --probe --save-frame /tmp/cli-shot.jpg
+  frame: 25060 bytes 1280x800 image/jpeg
+  saved: /tmp/cli-shot.jpg
+$ rdp-link --connect 127.0.0.1:18200 --password testpw --clipboard-set "rdp-link cli" --clipboard-get
+  rdp-link cli
+$ rdp-link --share --port 18201 --test-pattern --password sharepw
+  host agent starting — peer id: 033 976 933
+  LAN: http://192.168.1.14:18201/
+$ rdp-link --doctor               → Capture: OK, port free
+$ rdp-link --displays             → 0
+$ rdp-link --list                 → legacy FreeRDP profiles
+```
+
+Unit tests (`app/tests/test_cli.py`, 15 tests) cover probe/save, auth failure,
+clipboard ordering, click/type payloads, remote status, profile dispatch,
+`--json`, the “remote option without --connect” error, and a subprocess check
+that importing the CLI does not load `tkinter`.
+
 ## Artifacts
 
 | Artifact | Size | Notes |

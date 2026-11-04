@@ -2,56 +2,39 @@
 """RDP Link — entry point.
 
 GUI mode:      python3 ubuntu_rdp_manager.py
-CLI mode:      python3 ubuntu_rdp_manager.py --list
-               python3 ubuntu_rdp_manager.py --connect "Profile Name"
+Headless CLI:  python3 ubuntu_rdp_manager.py --id
+               python3 ubuntu_rdp_manager.py --status
+               python3 ubuntu_rdp_manager.py --share --port 8088
+               python3 ubuntu_rdp_manager.py --connect 192.168.1.20:8088
+               python3 ubuntu_rdp_manager.py --connect 123456789 \
+                   --rendezvous https://relay.example.com --probe
+               python3 ubuntu_rdp_manager.py --list
+               python3 ubuntu_rdp_manager.py --connect-profile "Profile Name"
 
-CLI mode avoids loading the GUI entirely and connects immediately —
-behaves like launching raw sdl-freerdp yourself.
+The CLI never imports tkinter, so it works over SSH and in containers/CI.
+The legacy --connect-profile path talks to FreeRDP; --connect accepts a
+profile name, an RDP Link peer ID, a host:port or an http(s) URL.
 """
 
 import os
 import sys
 
-from rdp_manager import __version__
+CLI_FLAGS = {
+    "--id", "--status", "--share", "--connect", "--connect-profile", "--list",
+    "--doctor", "--displays", "--peers", "--probe", "--save-frame",
+    "--clipboard-get", "--clipboard-set", "--click", "--type", "--key",
+    "--open", "--json", "--password", "--password-file", "--rendezvous",
+    "--port", "--display", "--read-only", "--test-pattern", "--relay-insecure",
+    "--relay-ca", "--timeout", "--version", "-V", "--help", "-h",
+}
 
 
-def _cli(argv):
-    """Handle --list / --connect / --version without importing tkinter."""
-    if "--version" in argv or "-V" in argv:
-        print(f"RDP Link {__version__}")
-        return 0
-    from rdp_manager.profiles import ProfileStore
-    store = ProfileStore()
-
-    if "--list" in argv:
-        from rdp_manager.connection import ConnectionController
-        ctl = ConnectionController(None)
-        for p in store.profiles:
-            mark = "*" if ctl.is_active(p["id"]) else " "
-            print(f"{mark} {p['name']:<24} {p['username']}@{p['host']}:{p['port']}")
-        return 0
-
-    if "--connect" in argv:
-        i = argv.index("--connect")
-        try:
-            wanted = argv[i + 1]
-        except IndexError:
-            print("error: --connect needs a profile name", file=sys.stderr)
-            return 2
-        profile = next((p for p in store.profiles
-                        if p["name"].lower() == wanted.lower()
-                        or p["id"] == wanted), None)
-        if not profile:
-            names = ", ".join(p["name"] for p in store.profiles) or "(none)"
-            print(f"error: no profile named {wanted!r}. Profiles: {names}",
-                  file=sys.stderr)
-            return 1
-        # Headless connect: bridges + status on stderr, no GUI.
-        from rdp_manager.connection import HeadlessApp
-        return HeadlessApp().connect_and_wait(profile)
-
-    print(__doc__)
-    return 0
+def _is_cli(argv):
+    if not argv:
+        return False
+    if argv[0].startswith("-"):
+        return True
+    return any(arg in CLI_FLAGS for arg in argv)
 
 
 def main():
@@ -84,15 +67,13 @@ def main():
         sep = i + 2 if (i + 2 < len(argv) and argv[i + 2] == "--") else None
         child = argv[sep + 1:] if sep else []
         sys.exit(watchdog.run(parent, child))
-    if any(a in ("--list", "--connect", "--version", "-V", "--help", "-h")
-           for a in argv):
-        if "--help" in argv or "-h" in argv:
-            print(__doc__)
-            return
-        sys.exit(_cli(argv))
+    if _is_cli(argv):
+        from rdp_manager.cli import main as cli_main
+        sys.exit(cli_main(argv))
     from rdp_manager.ui.app import UbuntuRDPApp
     UbuntuRDPApp().run()
 
 
 if __name__ == "__main__":
     main()
+
