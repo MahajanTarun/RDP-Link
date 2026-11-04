@@ -29,6 +29,28 @@ All surfaces use an Ant Design 5 light theme (see
 - [`docs/SETUP.md`](docs/SETUP.md) — one-click setup, permissions and installer automation
 - [`docs/SECURITY.md`](docs/SECURITY.md) — authentication model and hardening
 
+## Downloads (v0.2.0)
+
+Download the build for your operating system and install it. These files live in
+the [`releases/`](releases/) folder of this repository, so the links work
+directly from the GitHub page.
+
+| Operating system | Package | How to install |
+| --- | --- | --- |
+| **macOS** (arm64 + x86-64) | [`RDPLink-macos.dmg`](releases/RDPLink-macos.dmg) (50 MB) | Open the DMG and drag **RDP Link** into Applications. |
+| **macOS** (installer) | [`RDPLink-installer.pkg`](releases/RDPLink-installer.pkg) (46 MB) | Double-click; postinstall adds the firewall rule and login service. |
+| **Windows** (x86-64) | [`RDPLink-setup.exe`](releases/RDPLink-setup.exe) (22 MB) | Run the installer; it ships the launcher, the Go agent and the rendezvous server. |
+| **Linux** (arm64) | [`rdplink-linux-arm64.deb`](releases/rdplink-linux-arm64.deb) (23 MB) | `sudo dpkg -i rdplink-linux-arm64.deb` |
+| **Linux** (x86-64) | [`rdplink-linux-amd64.deb`](releases/rdplink-linux-amd64.deb) (24 MB) | `sudo dpkg -i rdplink-linux-amd64.deb` |
+| **Linux** (both arches) | [`rdplink-linux.tar.gz`](releases/rdplink-linux.tar.gz) (74 MB) | Extract and run `rdp-link` / `office-rdp` directly. |
+| **Android** (phone/tablet) | [`RDPLink-android-release.apk`](releases/RDPLink-android-release.apk) (49 MB) | Sideload the APK (enable "Install unknown apps"). |
+| **Android** (Play upload) | [`RDPLink-android-release.aab`](releases/RDPLink-android-release.aab) (19 MB) | Upload bundle to Google Play. |
+
+The macOS build is ad-hoc signed (`codesign --verify --strict` passes); the
+Android build is signed with the Office RDP release key. Windows and Linux
+binaries are not code-signed (Authenticode / distro signing are external
+blockers).
+
 ## Layout
 
 - `core/` — identity, peers, signed rendezvous auth, mDNS, capture,
