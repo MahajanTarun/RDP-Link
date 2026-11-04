@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -39,7 +40,7 @@ func (p testPeer) signed(t *testing.T, method, url string, body []byte) *http.Re
 	if err != nil {
 		t.Fatal(err)
 	}
-	peerauth.Apply(req.Header, p.priv, method, uri, peerauth.Timestamp(), body)
+	peerauth.Apply(req.Header, p.priv, method, uri, peerauth.Timestamp(), peerauth.Nonce(), body)
 	return req
 }
 
@@ -314,8 +315,20 @@ func TestPairing(t *testing.T) {
 	s := NewServer()
 	ts := httptest.NewServer(s)
 	defer ts.Close()
-	peer := newTestPeer(t)
-	body := []byte(`{"from":"a","to":"b","code":"123456"}`)
+	from := newTestPeer(t)
+	to := newTestPeer(t)
+	// The target must be registered, and its key is pinned by that
+	// registration.
+	reg, err := http.DefaultClient.Do(to.signed(t, http.MethodPost, ts.URL+"/register",
+		[]byte(`{"alias":"b"}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.Body.Close()
+	if reg.StatusCode != http.StatusOK {
+		t.Fatalf("register target: %d", reg.StatusCode)
+	}
+	body := []byte(fmt.Sprintf(`{"from":%q,"to":%q,"code":"123456"}`, from.id, to.id))
 
 	// Unsigned pairing is refused.
 	anon, err := http.Post(ts.URL+"/pair/start", "application/json",
@@ -328,13 +341,13 @@ func TestPairing(t *testing.T) {
 		t.Fatalf("unsigned pairing must fail, got %d", anon.StatusCode)
 	}
 
-	resp, err := http.DefaultClient.Do(peer.signed(t, http.MethodPost, ts.URL+"/pair/start", body))
+	resp, err := http.DefaultClient.Do(from.signed(t, http.MethodPost, ts.URL+"/pair/start", body))
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
 
-	vresp, err := http.DefaultClient.Do(peer.signed(t, http.MethodPost, ts.URL+"/pair/verify", body))
+	vresp, err := http.DefaultClient.Do(from.signed(t, http.MethodPost, ts.URL+"/pair/verify", body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +356,7 @@ func TestPairing(t *testing.T) {
 		t.Fatalf("verify %d", vresp.StatusCode)
 	}
 	// second verify should fail
-	vresp2, err := http.DefaultClient.Do(peer.signed(t, http.MethodPost, ts.URL+"/pair/verify", body))
+	vresp2, err := http.DefaultClient.Do(from.signed(t, http.MethodPost, ts.URL+"/pair/verify", body))
 	if err != nil {
 		t.Fatal(err)
 	}

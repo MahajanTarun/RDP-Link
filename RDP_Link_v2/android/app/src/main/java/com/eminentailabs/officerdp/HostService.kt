@@ -25,6 +25,7 @@ import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
 import org.json.JSONObject
 import android.os.Looper
+import android.net.Uri
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -47,6 +48,10 @@ class HostService : Service() {
         const val VERSION = "0.2.0"
         const val SESSION_COOKIE = "rdplink_sid"
         const val SESSION_TTL_MS = 12L * 60 * 60 * 1000
+        private const val AUTH_WINDOW_MS = 60_000L
+        private const val AUTH_MAX_FAILS = 20
+        private const val MAX_AUTH_IPS = 4096
+        private const val MAX_SESSIONS = 64
     }
 
     private var projection: MediaProjection? = null
@@ -68,6 +73,7 @@ class HostService : Service() {
     private var cropCanvas: android.graphics.Canvas? = null
     private var server: HostServer? = null
     private var heartbeat: java.util.concurrent.ScheduledExecutorService? = null
+    private var relayHandle: mobile.Relay? = null
     private var peerId: String = ""
 
     override fun onCreate() {
@@ -178,6 +184,11 @@ class HostService : Service() {
     override fun onDestroy() {
         heartbeat?.shutdownNow()
         heartbeat = null
+        try {
+            relayHandle?.stop()
+        } catch (_: Throwable) {
+        }
+        relayHandle = null
         server?.stop()
         server = null
         virtualDisplay?.release()
@@ -232,6 +243,23 @@ class HostService : Service() {
         heartbeat = Executors.newSingleThreadScheduledExecutor()
         val task = Runnable { register(rendezvous, alias, port) }
         heartbeat?.scheduleWithFixedDelay(task, 0, 60, TimeUnit.SECONDS)
+        startRelay(rendezvous, port)
+    }
+
+    private fun startRelay(rendezvous: String, port: Int) {
+        if (relayHandle != null) return
+        try {
+            // The Go relay client keeps an outbound WebSocket to the
+            // rendezvous and forwards requests to the local host server, so
+            // the Android host is reachable across NAT like the desktop
+            // agents.
+            relayHandle = mobile.Mobile.startRelay(
+                rendezvous, filesDir.absolutePath, port.toLong(), false
+            )
+            audit("relay tunnel starting")
+        } catch (e: Throwable) {
+            audit("relay start failed: ${e.message}")
+        }
     }
 
     private fun register(rendezvous: String, alias: String, port: Int) {
@@ -318,6 +346,8 @@ class HostService : Service() {
         port: Int
     ) : NanoHTTPD(port) {
         private val sessions = ConcurrentHashMap<String, Long>()
+        private val authFailures = LinkedHashMap<String, AuthFailure>()
+        private val authLock = Any()
         private val password: String
             get() = service.getSharedPreferences("officerdp", MODE_PRIVATE)
                 .getString("password", "") ?: ""
@@ -330,7 +360,8 @@ class HostService : Service() {
         }
 
         private fun sessionToken(session: IHTTPSession): String? {
-            session.parameters["token"]?.firstOrNull()?.let { return it }
+            // Session tokens travel only in the HttpOnly cookie. A token in a
+            // query string would leak through logs and referrers.
             val cookie = session.headers["cookie"] ?: return null
             return cookie.split(";").map { it.trim() }
                 .firstOrNull { it.startsWith("$SESSION_COOKIE=") }
@@ -347,17 +378,73 @@ class HostService : Service() {
             return true
         }
 
+        private data class AuthFailure(var windowStart: Long, var count: Int)
+
+        private fun checkOrigin(session: IHTTPSession): Boolean {
+            val origin = session.headers["origin"] ?: return true // native clients
+            val parsed = try { Uri.parse(origin) } catch (_: Exception) { return false }
+            val requestHost = session.headers["host"] ?: return false
+            return (parsed.scheme == "http" || parsed.scheme == "https") &&
+                parsed.authority.equals(requestHost, ignoreCase = true)
+        }
+
+        private fun clientKey(session: IHTTPSession): String {
+            val remote = session.remoteIpAddress.ifBlank { "unknown" }
+            // The relay reaches the host over loopback and sets
+            // X-Forwarded-For. Use it for throttling so one relay guest
+            // cannot lock out every other guest.
+            if (remote == "127.0.0.1" || remote == "::1") {
+                session.headers["x-forwarded-for"]
+                    ?.substringBefore(',')
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { return it }
+            }
+            return remote
+        }
+
+        private fun isThrottled(ip: String, now: Long): Boolean = synchronized(authLock) {
+            authFailures.entries.removeAll { now - it.value.windowStart >= AUTH_WINDOW_MS }
+            authFailures[ip]?.let { now - it.windowStart < AUTH_WINDOW_MS && it.count >= AUTH_MAX_FAILS }
+                ?: false
+        }
+
+        private fun recordFailure(ip: String, now: Long) = synchronized(authLock) {
+            val entry = authFailures[ip]
+            if (entry == null || now - entry.windowStart >= AUTH_WINDOW_MS) {
+                if (authFailures.size >= MAX_AUTH_IPS) {
+                    val oldest = authFailures.minByOrNull { it.value.windowStart }?.key
+                    if (oldest != null) authFailures.remove(oldest)
+                }
+                authFailures[ip] = AuthFailure(now, 1)
+            } else {
+                entry.count++
+            }
+        }
+
+        private fun clearFailures(ip: String) = synchronized(authLock) {
+            authFailures.remove(ip)
+        }
+
         // authorized accepts the access password as a header, or a session
-        // token as a cookie or query parameter. The password itself is never
-        // accepted from a URL.
+        // token as an HttpOnly cookie. Neither the password nor the session
+        // token is accepted from a URL.
         private fun authorized(session: IHTTPSession): Boolean {
+            if (!checkOrigin(session)) return false
+            val ip = clientKey(session)
+            val now = System.currentTimeMillis()
+            if (isThrottled(ip, now)) return false
             val expected = password
             if (expected.isEmpty()) return false
             session.headers["x-office-password"]?.let {
-                return constantEquals(expected, it)
+                val valid = constantEquals(expected, it)
+                if (valid) clearFailures(ip) else recordFailure(ip, now)
+                return valid
             }
             val token = sessionToken(session)
-            return token != null && isValidSession(token)
+            val valid = token != null && isValidSession(token)
+            if (valid) clearFailures(ip) else recordFailure(ip, now)
+            return valid
         }
 
         private fun handleSession(session: IHTTPSession): Response {
@@ -366,9 +453,20 @@ class HostService : Service() {
                     Response.Status.METHOD_NOT_ALLOWED, "text/plain", "method"
                 )
             }
+            if (!checkOrigin(session)) {
+                return newFixedLengthResponse(
+                    Response.Status.FORBIDDEN, "text/plain", "cross-origin request rejected"
+                )
+            }
+            val ip = clientKey(session)
+            val now = System.currentTimeMillis()
+            if (isThrottled(ip, now)) {
+                return newFixedLengthResponse(
+                    Response.Status.TOO_MANY_REQUESTS, "text/plain", "too many attempts"
+                )
+            }
             val expected = password
             val supplied = session.headers["x-office-password"]
-                ?: session.parameters["password"]?.firstOrNull()
                 ?: bodyText(session).takeIf { it.isNotEmpty() }?.let {
                     try {
                         JSONObject(it).optString("password")
@@ -378,12 +476,22 @@ class HostService : Service() {
                 }
                 ?: ""
             if (expected.isEmpty() || !constantEquals(expected, supplied)) {
+                recordFailure(ip, now)
                 return newFixedLengthResponse(
                     Response.Status.UNAUTHORIZED, "text/plain", "unauthorized"
                 )
             }
+            clearFailures(ip)
             val token = java.util.UUID.randomUUID().toString().replace("-", "")
-            sessions[token] = System.currentTimeMillis() + SESSION_TTL_MS
+            synchronized(sessions) {
+                val createdAt = System.currentTimeMillis()
+                sessions.entries.removeAll { it.value < createdAt }
+                if (sessions.size >= MAX_SESSIONS) {
+                    val oldest = sessions.minByOrNull { it.value }?.key
+                    if (oldest != null) sessions.remove(oldest)
+                }
+                sessions[token] = createdAt + SESSION_TTL_MS
+            }
             val response = newFixedLengthResponse(
                 Response.Status.OK, "application/json",
                 JSONObject().put("token", token).toString()
@@ -591,6 +699,11 @@ class HostService : Service() {
 
         private fun handleUpload(session: IHTTPSession): Response {
             val length = session.headers["content-length"]?.toLongOrNull() ?: 0L
+            if (length <= 0L) {
+                return newFixedLengthResponse(
+                    Response.Status.LENGTH_REQUIRED, "text/plain", "content-length required"
+                )
+            }
             if (length > 256L * 1024 * 1024) {
                 return newFixedLengthResponse(
                     Response.Status.PAYLOAD_TOO_LARGE, "text/plain", "too large"
@@ -599,18 +712,41 @@ class HostService : Service() {
             val files = HashMap<String, String>()
             try {
                 session.parseBody(files)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                return newFixedLengthResponse(
+                    Response.Status.BAD_REQUEST, "text/plain", "invalid upload"
+                )
             }
             val tmp = files.values.firstOrNull { it.isNotEmpty() }
             val requested = session.parameters["name"]?.firstOrNull()
                 ?.takeIf { it.isNotEmpty() }
                 ?: "upload.bin"
             val target = File(inbox, File(requested).name)
-            if (tmp != null && File(tmp).isFile) {
-                File(tmp).copyTo(target, overwrite = true)
-            } else {
-                val raw = files["postData"]
-                if (raw != null) target.writeBytes(raw.toByteArray())
+            try {
+                if (tmp != null && File(tmp).isFile) {
+                    val temporary = File(tmp)
+                    if (temporary.length() > 256L * 1024 * 1024) {
+                        return newFixedLengthResponse(
+                            Response.Status.PAYLOAD_TOO_LARGE, "text/plain", "too large"
+                        )
+                    }
+                    temporary.copyTo(target, overwrite = true)
+                } else {
+                    val raw = files["postData"]
+                        ?: return newFixedLengthResponse(
+                            Response.Status.BAD_REQUEST, "text/plain", "missing file"
+                        )
+                    if (raw.toByteArray().size > 256L * 1024 * 1024) {
+                        return newFixedLengthResponse(
+                            Response.Status.PAYLOAD_TOO_LARGE, "text/plain", "too large"
+                        )
+                    }
+                    target.writeBytes(raw.toByteArray())
+                }
+            } catch (e: Exception) {
+                return newFixedLengthResponse(
+                    Response.Status.INTERNAL_ERROR, "text/plain", "could not store upload"
+                )
             }
             return newFixedLengthResponse(Response.Status.NO_CONTENT, "text/plain", "")
         }
@@ -634,8 +770,10 @@ class HostService : Service() {
             val x = ev.optDouble("x", 0.0).toFloat().let { if (it <= 1f) it * width else it }
             val y = ev.optDouble("y", 0.0).toFloat().let { if (it <= 1f) it * height else it }
             when (type) {
-                "move" -> Unit
-                "click", "down", "up" -> a11y?.tap(x, y)
+                "move" -> a11y?.pointerMove(x, y)
+                "click" -> a11y?.tap(x, y)
+                "down" -> a11y?.pointerDown(x, y)
+                "up" -> a11y?.pointerUp(x, y)
                 "key" -> a11y?.key(ev.optString("key"))
                 "text" -> a11y?.appendText(ev.optString("text"))
                 "wheel" -> a11y?.scroll(ev.optInt("delta", 1))

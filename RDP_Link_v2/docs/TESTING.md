@@ -41,7 +41,7 @@ any pair can be tested host ↔ guest without a rendezvous server.
 | Tool | What it checks |
 | --- | --- |
 | `go vet`, `go test`, `go build` | Compilation, races in unit tests, protocol/identity/pairing logic |
-| `pytest` (72 tests) + `pyflakes` | Launcher helpers, profile store, keyboard/scroll mapping, viewer argv, panning logic |
+| `pytest` (80 tests) + `pyflakes` | Launcher helpers, profile store, keyboard/scroll mapping, viewer argv, panning logic |
 | `gosec` | Go static security analysis (medium and above) |
 | `govulncheck` | Known vulnerabilities reachable from the module graph |
 | `shellcheck` | All build and test shell scripts |
@@ -98,10 +98,11 @@ od -An -tx1 -N3 /tmp/f.jpg                     # ff d8 ff
 etag=$(curl -sD- -o /dev/null -H "X-Office-Password: PW" 'http://HOST:8099/frame.jpg' \
   | tr -d '\r' | awk -F': ' 'tolower($1)=="etag"{print $2}')
 curl -s -o /dev/null -w '%{http_code}\n' \
-  -H "If-None-Match: $etag" 'http://HOST:8099/frame.jpg-H 'X-Office-Password: PW''
+  -H "If-None-Match: $etag" -H 'X-Office-Password: PW' \
+  'http://HOST:8099/frame.jpg'
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
-  -H 'Content-Type: application/json' -d '{"type":"move","x":10,"y":10}' \
-  'http://HOST:8099/input-H 'X-Office-Password: PW''
+  -H 'Content-Type: application/json' -H 'X-Office-Password: PW' \
+  -d '{"type":"move","x":10,"y":10}' 'http://HOST:8099/input'
 curl -s -o /dev/null -w '%{http_code}\n' http://HOST:8099/ui
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -H 'X-Office-Password: PW' http://HOST:8099/quit
@@ -150,13 +151,17 @@ DISPLAY=:0 scrot /tmp/evidence.png
 
 ### 4.4 Browser guest checks
 
-Open `http://HOST:8099/#pw=PW` in Chromium. In the DOM the status tag must
-read `<width>×<height> · <n> fps`; the overlay must disappear after the
-password is accepted. On narrow (phone) viewports the header wraps to two rows
-instead of truncating the status.
+Open `http://HOST:8099/` in Chromium and type the password into the prompt. In
+the DOM the status tag must read `<width>×<height> · <n> fps`; the overlay must
+disappear after the password is accepted. On narrow (phone) viewports the
+header wraps to two rows instead of truncating the status.
 
-The control panel is `http://HOST:8099/ui#pw=PW`; it must show the RDP Link ID,
-LAN/WAN addresses, a green “Sharing” tag and working copy buttons.
+The control panel is `http://HOST:8099/ui`; it prompts for the password and
+must then show the RDP Link ID, LAN/WAN addresses, a green “Sharing” tag and
+working copy buttons.
+
+A `#pw=` fragment is still accepted for scripted runs. It never reaches the
+server, and the page removes it from the address bar as soon as it is read.
 
 ### 4.5 Android checks
 
@@ -166,11 +171,11 @@ adb -s <serial> shell am start -n com.eminentailabs.officerdp/.MainActivity
 
 # Host: start sharing, choose "Share entire screen", then
 adb -s <serial> forward tcp:18095 tcp:8095
-curl -s http://127.0.0.1:18095/info
+curl -s -H 'X-Office-Password: PW' http://127.0.0.1:18095/info
 curl -s -o /tmp/a.jpg -w '%{http_code} %{size_download}\n' \
-  'http://127.0.0.1:18095/frame.jpg-H 'X-Office-Password: PW''
+  -H 'X-Office-Password: PW' 'http://127.0.0.1:18095/frame.jpg'
 
-# Guest: enter http://MAC:8099/#pw=PW and tap Connect, then
+# Guest: enter http://MAC:8099/ and tap Connect, then
 adb -s <serial> exec-out screencap -p > /tmp/guest.png
 
 # UI inspection
@@ -179,8 +184,8 @@ adb -s <serial> shell cat /sdcard/ui.xml
 
 # Remote-control proof: inject a tap via the host API and read the result back
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
-  -H 'Content-Type: application/json' -d '{"type":"click","x":898,"y":770}' \
-  'http://127.0.0.1:18095/input-H 'X-Office-Password: PW''
+  -H 'Content-Type: application/json' -H 'X-Office-Password: PW' \
+  -d '{"type":"click","x":898,"y":770}' 'http://127.0.0.1:18095/input'
 ```
 
 `/input` must return `204`, and a follow-up `uiautomator dump` must show the
@@ -380,7 +385,10 @@ Android host files         upload 204 → ["parity.txt"] → download 200, MATCH
 /info with X-Office-Password       200
 POST /session                      200 + rdplink_sid cookie (HttpOnly, SameSite=Strict)
 /info with the cookie              200
-/info?token=<session token>        200
+/info?token=<session token>        401      (a session token is not a URL credential)
+POST /media-token                  200 + 2-minute read-only token
+/frame.jpg?token=<media token>     200/503  (503 when no frame is captured)
+/info?token=<media token>          401      (media token scope enforced)
 cross-origin POST /input           403
 spoofed X-Forwarded-For            ignored (no relay secret)
 unsigned POST /register            401

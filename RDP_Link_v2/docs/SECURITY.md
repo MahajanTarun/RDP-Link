@@ -28,11 +28,17 @@ work:
 | --- | --- |
 | `X-Office-Password: <password>` | Desktop viewer, CLI tools, the control panel |
 | `rdplink_sid` cookie (HttpOnly, SameSite=Strict) | Browsers, after `POST /session` |
-| `?token=<session token>` | Media players such as `ffplay` that cannot send headers |
+| `?token=<media token>` | Media players such as `ffplay` that cannot send headers |
 
 `POST /session` exchanges the password for a session token that is valid for
 12 hours. The token is opaque, random and can be revoked by restarting the
 host.
+
+`POST /media-token` (authenticated with the password or the session cookie)
+returns a separate token that is valid for two minutes and only opens the
+read-only media paths. A full session token is never accepted in a URL, so a
+media URL that leaks through a process list or a player log cannot drive
+input, read the clipboard or manage devices.
 
 The password is also kept out of the process list: the launcher writes it to a
 `0600` file and starts the agent with `--password-file`.
@@ -45,9 +51,12 @@ Ed25519 key (`core/peerauth`):
 - the peer ID in the request **must** equal `SHA-256(public key)` truncated to
   nine digits, so a signature can only ever claim the ID that belongs to that
   key;
-- the signature covers the method, the request URI, a timestamp and a hash of
-  the body, so it cannot be replayed for another endpoint or payload;
-- timestamps older than five minutes are rejected;
+- the signature covers the method, the request URI, a timestamp, a unique
+  nonce and a hash of the body, so it cannot be replayed for another endpoint
+  or payload;
+- timestamps older than five minutes are rejected, and a nonce that was
+  already used inside that window is refused, so a captured request cannot be
+  replayed even to the same endpoint;
 - the first key seen for a peer ID is pinned, so a later registration with a
   different key is refused.
 
@@ -55,14 +64,24 @@ This applies to `/register`, `/tunnel`, `/policy` and `/peers`. `/resolve` stays
 open — a guest has to resolve an ID it already knows — but it is rate limited
 to one lookup per two seconds per address.
 
-`/peers` returns the peer IDs and aliases to any signed caller. The LAN
-addresses are only returned when the request carries the relay's admin token
-(`--admin-token`, `RDPLINK_ADMIN_TOKEN`), so an unprivileged caller cannot
-map the network. `/pair/start` and `/pair/verify` need a signature too.
+`/peers` returns the peer IDs and aliases to a signed caller that has
+registered itself. The LAN addresses are only returned when the request
+carries the relay's admin token (`--admin-token`, `RDPLINK_ADMIN_TOKEN`), so
+an unprivileged caller cannot map the network. `/pair/start` and
+`/pair/verify` need a signature too, and only the two parties in a pairing may
+complete it.
+
+The nine-digit peer ID is a lookup handle, not a secret. It is short for
+AnyDesk-style usability, so it is guessable in principle; knowing it is not
+enough to register, take over a tunnel or read another peer's policy, because
+those operations require the matching Ed25519 key. `/resolve` is rate limited
+to one lookup per two seconds per address, which keeps the ID space from being
+enumerated quickly.
 
 The in-memory tables are bounded, so a caller cannot exhaust the server:
 10,000 pinned keys (least recently used evicted), 1,024 pending pairings,
-10,000 peer records (entries older than a day are swept).
+10,000 peer records (entries older than a day are swept), 50,000 replay
+nonces (expired entries swept) and 4,096 resolve-throttle entries.
 
 ## Hardening already in place
 

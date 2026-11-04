@@ -97,14 +97,52 @@ func TestSessionCookieAndToken(t *testing.T) {
 		t.Fatalf("cookie auth status %d", resp2.StatusCode)
 	}
 
-	// The token in the query works too (media players cannot set headers).
+	// A full session token in the query is not accepted on API endpoints.
 	resp3, err := http.Get("http://127.0.0.1:18093/info?token=" + payload.Token)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp3.Body.Close()
-	if resp3.StatusCode != 200 {
-		t.Fatalf("token auth status %d", resp3.StatusCode)
+	if resp3.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("session token in query must be rejected, got %d", resp3.StatusCode)
+	}
+
+	// Exchange the session for a purpose-scoped media token.
+	mtReq, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1:18093/media-token", nil)
+	mtReq.AddCookie(cookie)
+	mtResp, err := http.DefaultClient.Do(mtReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mtResp.Body.Close()
+	if mtResp.StatusCode != 200 {
+		t.Fatalf("media-token status %d", mtResp.StatusCode)
+	}
+	var media struct {
+		Token string `json:"token"`
+	}
+	json.NewDecoder(mtResp.Body).Decode(&media)
+	if media.Token == "" {
+		t.Fatal("no media token")
+	}
+	// The media token works on a read-only media path. The test agent has no
+	// captured frame, so 503 is fine; 401/403 would mean auth failed.
+	resp4, err := http.Get("http://127.0.0.1:18093/frame.jpg?token=" + media.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp4.Body.Close()
+	if resp4.StatusCode == http.StatusUnauthorized || resp4.StatusCode == http.StatusForbidden {
+		t.Fatalf("media token rejected on a media path: %d", resp4.StatusCode)
+	}
+	// The same token must not unlock a non-media endpoint.
+	resp5, err := http.Get("http://127.0.0.1:18093/info?token=" + media.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp5.Body.Close()
+	if resp5.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("media token escaped its scope: %d", resp5.StatusCode)
 	}
 
 	// A wrong password never yields a session.

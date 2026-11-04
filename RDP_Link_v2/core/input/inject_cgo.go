@@ -42,7 +42,22 @@ func Inject(ev map[string]any) error {
 		if b, ok := ev["button"].(float64); ok && b == 3 {
 			button = "right"
 		}
-		robotgo.Click(button, false)
+		switch t {
+		case "down":
+			// Keep the button held so a drag can move the pointer before
+			// the matching "up" event.
+			if err := robotgo.MouseDown(button); err != nil {
+				return err
+			}
+		case "up":
+			if err := robotgo.MouseUp(button); err != nil {
+				return err
+			}
+		default:
+			if err := robotgo.Click(button, false); err != nil {
+				return err
+			}
+		}
 	case "wheel":
 		delta, _ := ev["delta"].(float64)
 		direction := "up"

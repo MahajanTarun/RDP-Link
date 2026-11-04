@@ -3,7 +3,9 @@ package rendezvous
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -42,6 +44,12 @@ type Server struct {
 	// peerKeyUsed remembers when a key was last used, so the pin table can
 	// evict the least recently seen entry instead of growing forever.
 	peerKeyUsed map[string]time.Time
+	// seenNonces remembers signed request nonces for the timestamp window so
+	// a captured request cannot be replayed. lastNonceSweep keeps the sweep
+	// off the hot path: without it every signed request would walk the whole
+	// table under the server lock.
+	seenNonces     map[string]time.Time
+	lastNonceSweep time.Time
 	// adminToken unlocks the full registry listing (with the LAN addresses).
 	// Without it, /peers only returns the peer IDs and aliases.
 	adminToken   string
@@ -58,6 +66,7 @@ const (
 	maxPeerKeys    = 10000
 	maxPairs       = 1024
 	maxPeerRecords = 10000
+	maxNonces      = 50000
 	peerRecordTTL  = 24 * time.Hour
 )
 
@@ -66,6 +75,7 @@ func NewServer() *Server {
 		pairs: map[string]pendingPair{}, policies: map[string]map[string]any{},
 		tunnels: map[string]*tunnel{}, peerKeys: map[string]ed25519.PublicKey{},
 		peerKeyUsed:  map[string]time.Time{},
+		seenNonces:   map[string]time.Time{},
 		resolveCalls: map[string]time.Time{},
 		upgrader:     websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}}
 }
@@ -81,9 +91,13 @@ func NewServer() *Server {
 func (s *Server) verifyPeer(r *http.Request, body []byte) (string, bool) {
 	peer := normalizeID(r.Header.Get(peerauth.HeaderPeer))
 	timestamp := r.Header.Get(peerauth.HeaderTimestamp)
+	nonce := r.Header.Get(peerauth.HeaderNonce)
 	pubValue := r.Header.Get(peerauth.HeaderPublicKey)
 	signature := r.Header.Get(peerauth.HeaderSignature)
-	if peer == "" || timestamp == "" || pubValue == "" || signature == "" {
+	if peer == "" || timestamp == "" || nonce == "" || pubValue == "" || signature == "" {
+		return "", false
+	}
+	if len(nonce) < 16 || len(nonce) > 128 {
 		return "", false
 	}
 	if !peerauth.CheckTimestamp(timestamp) {
@@ -96,23 +110,50 @@ func (s *Server) verifyPeer(r *http.Request, body []byte) (string, bool) {
 	if peerauth.PeerID(pub) != peer {
 		return "", false
 	}
-	if !peerauth.Verify(pub, r.Method, r.URL.RequestURI(), timestamp, body, signature) {
+	if !peerauth.Verify(pub, r.Method, r.URL.RequestURI(), timestamp, nonce, body, signature) {
 		return "", false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := time.Now()
+	// Reject a replayed nonce, and keep the table bounded. Expired entries
+	// are swept at most once a minute so a busy relay does not scan the
+	// whole table on every signed request.
+	if now.Sub(s.lastNonceSweep) >= time.Minute {
+		for key, expiry := range s.seenNonces {
+			if now.After(expiry) {
+				delete(s.seenNonces, key)
+			}
+		}
+		s.lastNonceSweep = now
+	}
+	if _, used := s.seenNonces[nonce]; used {
+		return "", false
+	}
+	if len(s.seenNonces) >= maxNonces {
+		oldestKey, oldest := "", now
+		for key, expiry := range s.seenNonces {
+			if expiry.Before(oldest) {
+				oldestKey, oldest = key, expiry
+			}
+		}
+		if oldestKey != "" {
+			delete(s.seenNonces, oldestKey)
+		}
+	}
+	s.seenNonces[nonce] = now.Add(peerauth.MaxSkew)
 	if known, ok := s.peerKeys[peer]; ok {
 		if !known.Equal(pub) {
 			return "", false
 		}
-		s.peerKeyUsed[peer] = time.Now()
+		s.peerKeyUsed[peer] = now
 		return peer, true
 	}
 	if len(s.peerKeys) >= maxPeerKeys {
 		s.evictPeerKeyLocked()
 	}
 	s.peerKeys[peer] = pub
-	s.peerKeyUsed[peer] = time.Now()
+	s.peerKeyUsed[peer] = now
 	return peer, true
 }
 
@@ -164,11 +205,25 @@ func (s *Server) resolveAllowed(ip string) bool {
 	if ok && now.Sub(last) < 2*time.Second {
 		return false
 	}
-	if len(s.resolveCalls) > 4096 {
+	if len(s.resolveCalls) >= 4096 {
 		for key, when := range s.resolveCalls {
 			if now.Sub(when) > time.Minute {
 				delete(s.resolveCalls, key)
 			}
+		}
+		// If every entry is still inside the window, evict the oldest one so
+		// the table has a hard ceiling instead of growing without bound.
+		for len(s.resolveCalls) >= 4096 {
+			oldestKey, oldest := "", now
+			for key, when := range s.resolveCalls {
+				if when.Before(oldest) {
+					oldestKey, oldest = key, when
+				}
+			}
+			if oldestKey == "" {
+				break
+			}
+			delete(s.resolveCalls, oldestKey)
 		}
 	}
 	s.resolveCalls[ip] = now
@@ -213,7 +268,10 @@ func (s *Server) Resolve(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("peerId")
 	if id == "" {
 		// allow path /resolve/{id}
-		id = r.URL.Path[len("/resolve/"):]
+		const prefix = "/resolve/"
+		if strings.HasPrefix(r.URL.Path, prefix) {
+			id = r.URL.Path[len(prefix):]
+		}
 	}
 	id = normalizeID(id)
 	// Guests resolve a peer ID they already know, so this endpoint stays
@@ -248,13 +306,26 @@ func (s *Server) Resolve(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) List(w http.ResponseWriter, r *http.Request) {
 	// Listing the registry requires a signed request from a known identity.
-	if _, ok := s.verifyPeer(r, nil); !ok {
+	peer, ok := s.verifyPeer(r, nil)
+	if !ok {
 		http.Error(w, "signature required", http.StatusUnauthorized)
 		return
 	}
 	// The LAN addresses are only handed out to a caller that knows the
 	// admin token; everybody else sees the peer IDs and aliases only.
 	admin := s.adminAllowed(r)
+	// A key that has never registered is not allowed to enumerate the
+	// registry. This keeps a freshly generated identity from using /peers as
+	// a discovery oracle.
+	if !admin {
+		s.mu.RLock()
+		_, registered := s.peers[peer]
+		s.mu.RUnlock()
+		if !registered {
+			http.Error(w, "register before listing", http.StatusForbidden)
+			return
+		}
+	}
 	alias := r.URL.Query().Get("alias")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -320,10 +391,6 @@ func (s *Server) PairStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read body", http.StatusBadRequest)
 		return
 	}
-	if _, ok := s.verifyPeer(r, body); !ok {
-		http.Error(w, "signature required", http.StatusUnauthorized)
-		return
-	}
 	var req struct {
 		From string `json:"from"`
 		To   string `json:"to"`
@@ -333,8 +400,28 @@ func (s *Server) PairStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	peer, ok := s.verifyPeer(r, body)
+	if !ok {
+		http.Error(w, "signature required", http.StatusUnauthorized)
+		return
+	}
 	if req.From == "" || req.To == "" || req.Code == "" {
 		http.Error(w, "missing fields", http.StatusBadRequest)
+		return
+	}
+	if normalizeID(req.From) != peer {
+		http.Error(w, "from must match the signing identity", http.StatusForbidden)
+		return
+	}
+	if normalizeID(req.From) == normalizeID(req.To) {
+		http.Error(w, "cannot pair with yourself", http.StatusBadRequest)
+		return
+	}
+	s.mu.RLock()
+	_, targetKnown := s.peers[normalizeID(req.To)]
+	s.mu.RUnlock()
+	if !targetKnown {
+		http.Error(w, "target peer is not registered", http.StatusNotFound)
 		return
 	}
 	now := time.Now()
@@ -352,9 +439,9 @@ func (s *Server) PairStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many pending pairings", http.StatusTooManyRequests)
 		return
 	}
-	key := req.From + "|" + req.To
-	s.pairs[key] = pendingPair{From: req.From, To: req.To, Code: req.Code,
-		Exp: now.Add(5 * time.Minute)}
+	key := normalizeID(req.From) + "|" + normalizeID(req.To)
+	s.pairs[key] = pendingPair{From: normalizeID(req.From), To: normalizeID(req.To),
+		Code: req.Code, Exp: now.Add(5 * time.Minute)}
 	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "pending"})
@@ -370,7 +457,8 @@ func (s *Server) PairVerify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read body", http.StatusBadRequest)
 		return
 	}
-	if _, ok := s.verifyPeer(r, body); !ok {
+	signer, ok := s.verifyPeer(r, body)
+	if !ok {
 		http.Error(w, "signature required", http.StatusUnauthorized)
 		return
 	}
@@ -383,20 +471,54 @@ func (s *Server) PairVerify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	from, to := normalizeID(req.From), normalizeID(req.To)
+	if from == "" || to == "" || req.Code == "" {
+		http.Error(w, "missing fields", http.StatusBadRequest)
+		return
+	}
+	// Only the two parties in the pairing may verify it, and the signer must
+	// be one of them. Otherwise anybody who learned the code could complete
+	// somebody else's pairing.
+	if signer != from && signer != to {
+		http.Error(w, "not a party to this pairing", http.StatusForbidden)
+		return
+	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.pairs == nil {
 		s.pairs = map[string]pendingPair{}
 	}
-	key := req.From + "|" + req.To
-	p, ok := s.pairs[key]
-	if !ok || time.Now().After(p.Exp) || p.Code != req.Code {
+	key := from + "|" + to
+	p, found := s.pairs[key]
+	if !found || time.Now().After(p.Exp) || p.Code != req.Code ||
+		normalizeID(p.From) != from || normalizeID(p.To) != to {
+		s.mu.Unlock()
 		http.Error(w, "invalid or expired code", http.StatusUnauthorized)
 		return
 	}
 	delete(s.pairs, key)
+	other := to
+	if signer == to {
+		other = from
+	}
+	pub, known := s.peerKeys[other]
+	s.mu.Unlock()
+	if !known {
+		http.Error(w, "peer key is not registered", http.StatusConflict)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "paired", "certFp": "stub"})
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "paired",
+		"peerId": other,
+		"certFp": fingerprint(pub),
+	})
+}
+
+// fingerprint is a stable short identifier for a peer's public key, so a
+// pairing can pin the key it actually verified instead of a placeholder.
+func fingerprint(pub ed25519.PublicKey) string {
+	sum := sha256.Sum256(pub)
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 func (s *Server) SetPolicy(w http.ResponseWriter, r *http.Request) {

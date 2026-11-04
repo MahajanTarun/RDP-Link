@@ -87,10 +87,16 @@ type Agent struct {
 	fails  map[string]*failEntry
 
 	// Sessions are short-lived tokens handed out by POST /session. They let
-	// a browser (or a media player that cannot set headers) authenticate
-	// without putting the access password into a URL.
+	// a browser authenticate without putting the access password into a URL.
 	sessMu   sync.Mutex
 	sessions map[string]time.Time
+
+	// mediaTokens are purpose-scoped, very short-lived tokens for players
+	// (ffplay, native media elements) that can only be given a URL. They are
+	// only valid for read-only media paths, so a leaked URL cannot drive
+	// input, read the clipboard, or manage devices.
+	mediaMu     sync.Mutex
+	mediaTokens map[string]mediaGrant
 
 	// relaySecret proves that a request was forwarded by this process'
 	// relay client. Only those requests may set X-Forwarded-For.
@@ -115,6 +121,11 @@ const (
 	sessionTTL = 12 * time.Hour
 	// maxSessions bounds the session table.
 	maxSessions = 64
+	// mediaTokenTTL is intentionally short: a media URL may end up in a
+	// process list or a player's log, so it expires quickly.
+	mediaTokenTTL = 2 * time.Minute
+	// maxMediaTokens bounds the media token table.
+	maxMediaTokens = 64
 	// sessionCookie is the name of the browser session cookie.
 	sessionCookie = "rdplink_sid"
 	// clipboardCacheTTL is how long a clipboard read is reused.
@@ -127,9 +138,11 @@ func New(peerID, alias, password string, port int) *Agent {
 		secret = []byte(fmt.Sprintf("%d", time.Now().UnixNano()))
 	}
 	a := &Agent{PeerID: peerID, Alias: alias, Password: password, Port: port,
-		fails:    map[string]*failEntry{},
-		sessions: map[string]time.Time{}, relaySecret: hex.EncodeToString(secret),
-		Forwards: map[int]bool{}, done: make(chan struct{})}
+		fails:       map[string]*failEntry{},
+		sessions:    map[string]time.Time{},
+		mediaTokens: map[string]mediaGrant{},
+		relaySecret: hex.EncodeToString(secret),
+		Forwards:    map[int]bool{}, done: make(chan struct{})}
 	a.LANIP = lanIP()
 	a.WANIP = wanIP()
 	return a
@@ -211,8 +224,8 @@ func (a *Agent) FrameJPEG() ([]byte, string, uint64) {
 //   - X-Office-Password: the access password (desktop viewers, CLI tools);
 //   - the rdplink_sid cookie: a session handed out by POST /session
 //     (browsers, where media elements cannot set headers);
-//   - ?token=: the same session token, for players such as ffplay that can
-//     only be given a URL.
+//   - ?token=: a purpose-scoped media token from POST /media-token, only on
+//     read-only media paths. A full session token is never accepted in a URL.
 //
 // The access password is never accepted as a URL query parameter, so it does
 // not end up in proxy logs, browser history or the process list.
@@ -241,7 +254,12 @@ func (a *Agent) auth(w http.ResponseWriter, r *http.Request) bool {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return false
 	}
-	if token := sessionToken(r); token != "" && a.validSession(token) {
+	if token := cookieSessionToken(r); token != "" && a.validSession(token) {
+		a.clearFailures(ip)
+		return true
+	}
+	if token := r.URL.Query().Get("token"); token != "" &&
+		mediaPathAllowed(r.URL.Path) && a.validMediaToken(token, mediaScope) {
 		a.clearFailures(ip)
 		return true
 	}
@@ -250,12 +268,75 @@ func (a *Agent) auth(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-// sessionToken extracts the session token from the cookie or the query.
-func sessionToken(r *http.Request) string {
+// cookieSessionToken extracts a browser session token from the cookie only.
+func cookieSessionToken(r *http.Request) string {
 	if cookie, err := r.Cookie(sessionCookie); err == nil && cookie.Value != "" {
 		return cookie.Value
 	}
-	return r.URL.Query().Get("token")
+	return ""
+}
+
+// mediaGrant is a short-lived credential limited to one purpose.
+type mediaGrant struct {
+	expiry time.Time
+	scope  string
+}
+
+const mediaScope = "media"
+
+// mediaPathAllowed lists the read-only endpoints that a URL token may reach.
+// Everything else (input, clipboard, files, devices) requires a session
+// cookie or the access password header.
+func mediaPathAllowed(path string) bool {
+	switch path {
+	case "/frame.jpg", "/frame.png", "/stream.mjpg", "/audio", "/camera.mjpg":
+		return true
+	default:
+		return false
+	}
+}
+
+// newMediaToken issues a purpose-scoped token for header-less players.
+func (a *Agent) newMediaToken(scope string) string {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
+	token := hex.EncodeToString(buf)
+	now := time.Now()
+	a.mediaMu.Lock()
+	defer a.mediaMu.Unlock()
+	for key, grant := range a.mediaTokens {
+		if now.After(grant.expiry) {
+			delete(a.mediaTokens, key)
+		}
+	}
+	if len(a.mediaTokens) >= maxMediaTokens {
+		oldestKey, oldest := "", now
+		for key, grant := range a.mediaTokens {
+			if grant.expiry.Before(oldest) {
+				oldestKey, oldest = key, grant.expiry
+			}
+		}
+		delete(a.mediaTokens, oldestKey)
+	}
+	a.mediaTokens[token] = mediaGrant{expiry: now.Add(mediaTokenTTL), scope: scope}
+	return token
+}
+
+// validMediaToken reports whether a media token is active and in scope.
+func (a *Agent) validMediaToken(token, scope string) bool {
+	a.mediaMu.Lock()
+	defer a.mediaMu.Unlock()
+	grant, ok := a.mediaTokens[token]
+	if !ok {
+		return false
+	}
+	if time.Now().After(grant.expiry) || grant.scope != scope {
+		delete(a.mediaTokens, token)
+		return false
+	}
+	return true
 }
 
 // newSession issues a session token.
@@ -361,6 +442,53 @@ func (a *Agent) handleSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleMediaToken issues a short-lived, read-only token for players that
+// cannot send an Authorization header (ffplay). It requires a real session
+// cookie or the access password, so a media token can never mint another.
+func (a *Agent) handleMediaToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+		return
+	}
+	if !sameOrigin(r) {
+		http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+		return
+	}
+	ip := clientIP(r, a.relaySecret)
+	if a.throttled(ip) {
+		http.Error(w, "too many attempts", http.StatusTooManyRequests)
+		return
+	}
+	if a.Password == "" {
+		http.Error(w, "host password not configured", http.StatusForbidden)
+		return
+	}
+	authorized := false
+	if supplied := r.Header.Get("X-Office-Password"); supplied != "" {
+		authorized = subtle.ConstantTimeCompare([]byte(supplied), []byte(a.Password)) == 1
+	} else if token := cookieSessionToken(r); token != "" {
+		authorized = a.validSession(token)
+	}
+	if !authorized {
+		a.noteFailure(ip)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	a.clearFailures(ip)
+	token := a.newMediaToken(mediaScope)
+	if token == "" {
+		http.Error(w, "token failed", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(map[string]any{
+		"token":     token,
+		"scope":     mediaScope,
+		"expiresIn": int(mediaTokenTTL / time.Second),
+	})
+}
+
 // sameOrigin reports whether a request comes from this host's own pages.
 // Browsers send Origin on state-changing requests, so this blocks a web page
 // on another site from driving the host with a stolen or guessed password.
@@ -379,7 +507,8 @@ func sameOrigin(r *http.Request) bool {
 func (a *Agent) Serve() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/session", a.handleSession)
-	// auth accepts the access password, a session cookie or a session token,
+	mux.HandleFunc("/media-token", a.handleMediaToken)
+	// auth accepts the access password, a session cookie or a media token,
 	// and rejects cross-origin requests. It lives on the Agent so that the
 	// device bridge endpoints are covered as well.
 	auth := a.auth
@@ -569,25 +698,60 @@ func (a *Agent) Serve() error {
 		// The guest may name the file explicitly (?name=). Otherwise the
 		// multipart filename is used.
 		requested := sanitizeName(r.URL.Query().Get("name"))
+		saved := 0
+		var failure error
 		for {
 			part, err := mr.NextPart()
-			if err != nil {
+			if err == io.EOF {
 				break
+			}
+			if err != nil {
+				http.Error(w, "invalid multipart body", http.StatusBadRequest)
+				return
 			}
 			name := sanitizeName(part.FileName())
 			if requested != "" {
 				name = requested
 			}
 			path, ok := safeJoin(a.InboxDir(), name)
-			if ok && !strings.HasPrefix(name, ".") {
-				// #nosec G304 G703 -- safeJoin rejects separators and parent traversal.
-				f, err := os.Create(path)
-				if err == nil {
-					_, _ = io.Copy(f, io.LimitReader(part, maxUploadFile))
-					f.Close()
-				}
+			if !ok || strings.HasPrefix(name, ".") {
+				_ = part.Close()
+				continue
 			}
-			part.Close()
+			// #nosec G304 G703 -- safeJoin rejects separators and parent traversal.
+			f, err := os.Create(path)
+			if err != nil {
+				failure = err
+				_ = part.Close()
+				continue
+			}
+			written, copyErr := io.Copy(f, io.LimitReader(part, maxUploadFile))
+			closeErr := f.Close()
+			_ = part.Close()
+			if copyErr != nil {
+				failure = copyErr
+				_ = os.Remove(path)
+				continue
+			}
+			if closeErr != nil {
+				failure = closeErr
+				_ = os.Remove(path)
+				continue
+			}
+			if written >= maxUploadFile {
+				_ = os.Remove(path)
+				http.Error(w, "file exceeds the upload limit", http.StatusRequestEntityTooLarge)
+				return
+			}
+			saved++
+		}
+		if failure != nil {
+			http.Error(w, "upload failed: "+failure.Error(), http.StatusInternalServerError)
+			return
+		}
+		if saved == 0 {
+			http.Error(w, "no file part in the upload", http.StatusBadRequest)
+			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})

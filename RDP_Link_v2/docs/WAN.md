@@ -75,7 +75,9 @@ the same panel (or leave the last one), and press Connect. The launcher:
 **Browser / Android:** either paste the relay URL
 `https://relay.example.com/t/033976933/` (the trailing slash matters), or set
 the rendezvous URL in Android's **Advanced settings** and enter the 9-digit ID;
-the app resolves it to the relay URL automatically.
+the app resolves it to the relay URL automatically. The Android host starts the
+same outbound relay tunnel as the desktop agent (through the gomobile-bound Go
+relay client) when a rendezvous URL is configured.
 
 ## 4. What the relay does and does not do
 

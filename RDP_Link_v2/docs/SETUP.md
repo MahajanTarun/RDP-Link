@@ -38,8 +38,9 @@ The host asks for an access password once; everything else is automatic.
   `SameSite=Strict` session cookie (`POST /session`); the password itself is
   never part of a URL, so it stays out of the browser history and out of
   `Referer` headers.
-- **Media players** that cannot send headers (`ffplay`) receive a short-lived
-  session token instead of the password.
+- **Media players** that cannot send headers (`ffplay`) receive a two-minute,
+  read-only media token (`POST /media-token`) instead of the password. It
+  only opens the media paths, never input, clipboard, files or devices.
 - The **rendezvous** only accepts requests that are signed with the device's
   Ed25519 key, so nobody can register or hijack a peer ID.
 

@@ -181,6 +181,7 @@
   const params = new URLSearchParams(location.hash.slice(1));
   let password = params.get('pw') || '';
   let info = {};
+  if (params.has('pw')) history.replaceState(null, '', location.pathname + location.search);
 
   const toast = (msg) => {
     const el = $('toast');
@@ -209,12 +210,13 @@
 
   async function load() {
     try {
-      let res = await fetch('info', { headers: authHeaders(), cache: 'no-store' });
-      if (res.status === 401) {
-        if (await startSession()) {
-          res = await fetch('info', { cache: 'no-store', credentials: 'same-origin' });
-        }
+      if (!password) {
+        password = prompt('Enter the RDP Link access password:') || '';
+        if (!password) throw new Error('password required');
       }
+      if (!await startSession()) throw new Error('session rejected');
+      let res = await fetch('info', { headers: authHeaders(), cache: 'no-store' });
+      if (res.status === 401) res = await fetch('info', { cache: 'no-store', credentials: 'same-origin' });
       if (!res.ok) throw new Error('info ' + res.status);
       info = await res.json();
       $('peerId').textContent = info.peerId || '—';
@@ -252,8 +254,9 @@
   });
 
   $('openViewer').addEventListener('click', () => {
-    const url = new URL('.', location.href).href +
-      (password ? '#pw=' + encodeURIComponent(password) : '');
+    // The session cookie is scoped to this host, so the password does not
+    // need to appear in the viewer URL.
+    const url = new URL('.', location.href).href;
     window.open(url, '_blank', 'noopener');
   });
 
@@ -291,10 +294,7 @@
     toast('Sharing stopped');
   });
 
-  (async () => {
-    if (password) await startSession();
-    load();
-  })();
+  load();
 })();
 </script>
 </body>

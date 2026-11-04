@@ -8,6 +8,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.Manifest
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
@@ -27,6 +28,7 @@ class ViewerActivity : Activity() {
 
     private lateinit var web: WebView
     private var pendingRequest: PermissionRequest? = null
+    private var allowedOrigin: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,6 +38,7 @@ class ViewerActivity : Activity() {
             return
         }
         val target = if (url.startsWith("http")) url else "http://$url"
+        allowedOrigin = Uri.parse(target)
 
         val root = FrameLayout(this)
         web = WebView(this)
@@ -58,9 +61,33 @@ class ViewerActivity : Activity() {
             builtInZoomControls = false
             displayZoomControls = false
         }
-        web.webViewClient = WebViewClient()
+        web.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: android.webkit.WebResourceRequest?
+            ): Boolean {
+                val destination = request?.url ?: return true
+                // The guest WebView contains a host password/session. Keep
+                // navigation inside the host origin; external links must be
+                // opened by the user's normal browser, not this privileged
+                // WebView.
+                if (!sameOrigin(destination)) {
+                    android.widget.Toast.makeText(
+                        this@ViewerActivity,
+                        "External links are blocked in the remote viewer",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    return true
+                }
+                return false
+            }
+        }
         web.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
+                if (!sameOrigin(request.origin)) {
+                    request.deny()
+                    return
+                }
                 val wanted = request.resources.filter {
                     it == PermissionRequest.RESOURCE_AUDIO_CAPTURE ||
                         it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
@@ -89,6 +116,20 @@ class ViewerActivity : Activity() {
         web.loadUrl(target)
 
         enterImmersive()
+    }
+
+    private fun sameOrigin(candidate: Uri): Boolean {
+        val expected = allowedOrigin ?: return false
+        return candidate.scheme.equals(expected.scheme, ignoreCase = true) &&
+            candidate.host.equals(expected.host, ignoreCase = true) &&
+            effectivePort(candidate) == effectivePort(expected)
+    }
+
+    private fun effectivePort(uri: Uri): Int = when {
+        uri.port >= 0 -> uri.port
+        uri.scheme.equals("https", ignoreCase = true) -> 443
+        uri.scheme.equals("http", ignoreCase = true) -> 80
+        else -> -1
     }
 
     private fun enterImmersive() {

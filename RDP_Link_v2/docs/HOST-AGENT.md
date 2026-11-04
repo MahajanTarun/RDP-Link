@@ -20,8 +20,10 @@ It captures the screen (requires OS screen-recording permission) and serves:
   `/usb/*`, `/port/<port>/` — the device bridge
 - `GET /` — the built-in HTML viewer, `GET /ui` — the control panel
 
-Every endpoint needs a credential: the `X-Office-Password` header, the
-`rdplink_sid` cookie or a `?token=` session token.
+Every endpoint needs a credential: the `X-Office-Password` header or the
+`rdplink_sid` cookie. Media players that cannot send headers use a 2-minute,
+read-only `?token=` from `POST /media-token`, which only opens
+`/frame.jpg`, `/frame.png`, `/stream.mjpg`, `/audio` and `/camera.mjpg`.
 
 Guest viewer:
 ```

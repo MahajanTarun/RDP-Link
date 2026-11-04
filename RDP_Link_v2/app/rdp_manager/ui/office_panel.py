@@ -7,7 +7,7 @@ the two features can evolve separately.
 
 import json
 import os
-import random
+import secrets
 import shutil
 import socket
 import subprocess
@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from tkinter import messagebox, simpledialog, ttk
 
-from ..viewer_launch import viewer_argv
+from ..viewer_launch import discard_password_file, viewer_argv
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "office-rdp")
 GUI_CONFIG = os.path.join(CONFIG_DIR, "gui.json")
@@ -67,19 +67,38 @@ def _load_config():
 
 def write_password_file(password):
     """Store the access password in a 0600 file and return its path."""
-    os.makedirs(CONFIG_DIR, exist_ok=True)
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(CONFIG_DIR, 0o700)
+    except OSError:
+        pass
     path = os.path.join(CONFIG_DIR, "host-password")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
         fh.write(password + "\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
     return path
 
 
 def _save_config(data):
-    os.makedirs(CONFIG_DIR, exist_ok=True)
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
     try:
-        with open(GUI_CONFIG, "w") as fh:
-            json.dump(data, fh)
+        # Passwords belong in the private password file, never in the general
+        # launcher settings JSON. Migrate a legacy key out if one remains.
+        safe_data = dict(data)
+        safe_data.pop("password", None)
+        temp = GUI_CONFIG + ".tmp"
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            json.dump(safe_data, fh)
+        os.replace(temp, GUI_CONFIG)
+        try:
+            os.chmod(GUI_CONFIG, 0o600)
+        except OSError:
+            pass
     except Exception:
         pass
 
@@ -90,11 +109,30 @@ class OfficePanel(ttk.Frame):
         self.status_callback = status_callback or (lambda *a, **k: None)
         self.config_data = _load_config()
         self.host_proc = None
-        self.port = tk.IntVar(value=int(self.config_data.get("port", DEFAULT_PORT)))
+        legacy_password = self.config_data.pop("password", None)
+        password_file = os.path.join(CONFIG_DIR, "host-password")
+        try:
+            with open(password_file) as fh:
+                saved_password = fh.read().strip()
+        except OSError:
+            saved_password = ""
+        if not saved_password and legacy_password:
+            saved_password = str(legacy_password)
+            write_password_file(saved_password)
+        if legacy_password is not None:
+            # Remove a password left in an older plaintext gui.json.
+            _save_config(self.config_data)
+        try:
+            saved_port = int(self.config_data.get("port", DEFAULT_PORT))
+        except (TypeError, ValueError):
+            saved_port = DEFAULT_PORT
+        if not 1 <= saved_port <= 65535:
+            saved_port = DEFAULT_PORT
+        self.port = tk.IntVar(value=saved_port)
         self.peer_id = tk.StringVar(value="—")
         self.lan_addr = tk.StringVar(value="Not sharing")
         self.wan_addr = tk.StringVar(value="—")
-        self.password = tk.StringVar(value=self.config_data.get("password") or self._random_password())
+        self.password = tk.StringVar(value=saved_password or self._random_password())
         self.display = tk.StringVar(value="0")
         self.rendezvous = tk.StringVar(value=self.config_data.get("rendezvous", ""))
         self.target = tk.StringVar(value="")
@@ -280,40 +318,53 @@ class OfficePanel(ttk.Frame):
         if not password:
             messagebox.showerror("RDP Link", "Set an access password before sharing.")
             return
+        try:
+            port = int(self.port.get())
+        except (ValueError, tk.TclError):
+            messagebox.showerror("RDP Link", "Port must be a number from 1 to 65535.")
+            return
+        if not 1 <= port <= 65535:
+            messagebox.showerror("RDP Link", "Port must be between 1 and 65535.")
+            return
         self.config_data.update({
-            "password": password,
-            "port": int(self.port.get()),
+            "port": port,
             "rendezvous": self.rendezvous.get().strip(),
         })
         _save_config(self.config_data)
         # The password goes into a 0600 file instead of the command line, so
         # it does not show up in the process list.
         password_file = write_password_file(password)
-        args = [binp, "--host", "--port", str(self.port.get()),
+        args = [binp, "--host", "--port", str(port),
                 "--display", str(self.display.get() or "0"),
                 "--password-file", password_file]
         if self.rendezvous.get().strip():
             args += ["--rendezvous", self.rendezvous.get().strip()]
         try:
-            self.host_proc = subprocess.Popen(
-                args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-            )
+            # Log to a private file instead of an undrained pipe; a pipe that
+            # nobody reads would eventually block the host process.
+            log_path = os.path.join(CONFIG_DIR, "host.log")
+            log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            try:
+                self.host_proc = subprocess.Popen(
+                    args, stdout=log_fd, stderr=subprocess.STDOUT)
+            finally:
+                os.close(log_fd)
         except Exception as exc:
             messagebox.showerror("RDP Link", str(exc))
             return
         self.start_btn.state(["disabled"])
         self.stop_btn.state(["!disabled"])
         self._set_state("Starting…", "#f59e0b")
-        threading.Thread(target=self._probe_host, daemon=True).start()
+        threading.Thread(target=self._probe_host,
+                         args=(port, password, self.host_proc),
+                         daemon=True).start()
 
-    def _probe_host(self):
+    def _probe_host(self, port, password, host_proc):
         import time
 
-        port = int(self.port.get())
-        password = self.password.get().strip()
         for _ in range(20):
             time.sleep(0.4)
-            if self.host_proc is None or self.host_proc.poll() is not None:
+            if host_proc is None or host_proc.poll() is not None:
                 self.after(0, lambda: self._set_state("Host exited", "#ef4444"))
                 return
             try:
@@ -365,9 +416,18 @@ class OfficePanel(ttk.Frame):
         if not target:
             messagebox.showerror("RDP Link", "Enter an address or peer ID.")
             return
-        password = self.connect_password.get() or self.password.get()
+        # Never fall back to this device's own sharing password: the remote
+        # host has a different credential, and sending the wrong one only
+        # produces a confusing 401.
+        password = self.connect_password.get().strip()
+        if not password:
+            password = simpledialog.askstring(
+                "RDP Link", "Access password on the remote device:",
+                show="*", parent=self) or ""
+            if not password:
+                return
         if target.replace(" ", "").isdigit() and len(target.replace(" ", "")) == 9:
-            target = self._resolve_peer(target, password)
+            target = self._resolve_peer(target)
             if not target:
                 return
         if not target.startswith("http"):
@@ -375,7 +435,7 @@ class OfficePanel(ttk.Frame):
         self._remember(target)
         self._open_viewer(target, password)
 
-    def _resolve_peer(self, peer_id, password):
+    def _resolve_peer(self, peer_id):
         rendezvous = self.rendezvous.get().strip()
         if not rendezvous:
             rendezvous = simpledialog.askstring(
@@ -422,9 +482,11 @@ class OfficePanel(ttk.Frame):
         return None
 
     def _open_viewer(self, address, password):
+        argv = viewer_argv(address, password)
         try:
-            subprocess.Popen(viewer_argv(address, password))
+            subprocess.Popen(argv)
         except Exception as exc:
+            discard_password_file(argv)
             messagebox.showerror("RDP Link", f"Could not open viewer: {exc}")
             return
         self.status_callback(f"Opening viewer for {address}")
@@ -493,4 +555,4 @@ class OfficePanel(ttk.Frame):
         self.status_callback(f"Copied {label}")
 
     def _random_password(self):
-        return str(random.SystemRandom().randint(100000, 999999))
+        return secrets.token_urlsafe(24)

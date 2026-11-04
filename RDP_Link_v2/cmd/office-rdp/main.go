@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/binary"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -53,7 +53,8 @@ func relayHTTPClient(insecure bool, caFile string) *http.Client {
 func main() {
 	version := flag.Bool("version", false, "print version")
 	idFlag := flag.Bool("id", false, "print peer id")
-	connect := flag.String("connect", "", "connect to peer id or alias (stub)")
+	connect := flag.String("connect", "",
+		"open the browser viewer for a peer ID or an http(s) URL")
 	wake := flag.String("wake", "", "send Wake-on-LAN magic packet to MAC address")
 	pairCode := flag.Bool("pair-code", false, "generate a one-time pairing code")
 	agent := flag.Bool("agent", false, "run host agent (stub)")
@@ -143,7 +144,21 @@ func main() {
 		pw := resolvePassword(*password, *passwordFile)
 		if pw == "" {
 			pw = randomPassword()
-			fmt.Println("No password supplied — generated one for this session.")
+			if pw == "" {
+				fmt.Fprintln(os.Stderr, "cannot generate a cryptographically secure access password")
+				os.Exit(1)
+			}
+			path := hostPasswordPath()
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				fmt.Fprintln(os.Stderr, "cannot create private password directory:", err)
+				os.Exit(1)
+			}
+			if err := os.WriteFile(path, []byte(pw+"\n"), 0o600); err != nil { // #nosec G306
+				fmt.Fprintln(os.Stderr, "cannot save generated password:", err)
+				os.Exit(1)
+			}
+			_ = os.Chmod(path, 0o600)
+			fmt.Println("Generated access password saved to:", path)
 		}
 		ag := host.New(id.Formatted(), id.Alias, pw, *port)
 		ag.ReadOnly = *readOnly
@@ -171,9 +186,11 @@ func main() {
 		}
 		fmt.Printf("LAN:  http://%s:%d/\n", ag.LANIP, *port)
 		fmt.Printf("WAN:  http://%s:%d/\n", ag.WANIP, *port)
-		fmt.Printf("Password: %s\n", pw)
 		if *ui {
-			url := fmt.Sprintf("http://127.0.0.1:%d/ui#pw=%s", *port, pw)
+			// The control panel asks for the password and exchanges it for a
+			// session cookie. Never place the credential in a browser URL or
+			// the `open`/`xdg-open` process arguments.
+			url := fmt.Sprintf("http://127.0.0.1:%d/ui", *port)
 			// Wait for Serve to bind before handing the URL to the browser.
 			go func() {
 				time.Sleep(700 * time.Millisecond)
@@ -257,7 +274,68 @@ func main() {
 	}
 
 	if *connect != "" {
-		fmt.Printf("connecting to %s (stub) — local id %s\n", *connect, id.Formatted())
+		target := strings.TrimSpace(*connect)
+		if !strings.HasPrefix(target, "http://") && !strings.HasPrefix(target, "https://") {
+			// Accept the same spaced 9-digit form the UI shows.
+			digits := strings.Map(func(r rune) rune {
+				if r >= '0' && r <= '9' {
+					return r
+				}
+				return -1
+			}, target)
+			if len(digits) != 9 {
+				fmt.Fprintln(os.Stderr, "connect: expected a 9-digit peer ID or an http(s) URL")
+				os.Exit(2)
+			}
+			if *rendezvous == "" {
+				fmt.Fprintln(os.Stderr, "connect: --rendezvous is required to resolve a peer ID")
+				os.Exit(2)
+			}
+			client := relayHTTPClient(*relayInsecure, *relayCA)
+			resp, err := client.Get(strings.TrimRight(*rendezvous, "/") + "/resolve?peerId=" + digits)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "connect:", err)
+				os.Exit(1)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+				fmt.Fprintln(os.Stderr, "connect:", resp.Status, strings.TrimSpace(string(body)))
+				os.Exit(1)
+			}
+			var info struct {
+				Addr string `json:"addr"`
+				URL  string `json:"url"`
+			}
+			if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
+				fmt.Fprintln(os.Stderr, "connect:", err)
+				os.Exit(1)
+			}
+			// Same LAN is faster, so use it when it answers; the relay is
+			// the fallback for NAT and changing addresses.
+			target = ""
+			if addr := strings.TrimSpace(info.Addr); addr != "" {
+				if conn, err := net.DialTimeout("tcp", addr, 700*time.Millisecond); err == nil {
+					_ = conn.Close()
+					target = "http://" + addr + "/"
+				}
+			}
+			if target == "" {
+				target = strings.TrimSpace(info.URL)
+			}
+			if target == "" && info.Addr != "" {
+				target = "http://" + strings.TrimSpace(info.Addr) + "/"
+			}
+			if target == "" {
+				fmt.Fprintln(os.Stderr, "connect: the rendezvous returned no address for this peer")
+				os.Exit(1)
+			}
+		}
+		fmt.Println("Opening:", target)
+		if err := openBrowser(target); err != nil {
+			fmt.Fprintln(os.Stderr, "open browser:", err)
+			fmt.Println("Open this URL:", target)
+		}
 		return
 	}
 	if *wake != "" {
@@ -327,7 +405,10 @@ func main() {
 			fmt.Fprintln(os.Stderr, "install:", err)
 			return
 		}
-		password := servicePassword()
+		// Generate/persist the unattended password, then refer to it by path.
+		// Printing it here would copy the credential into terminal scrollback
+		// and CI logs.
+		_ = servicePassword()
 		switch runtime.GOOS {
 		case "darwin":
 			dir := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")
@@ -355,7 +436,7 @@ func main() {
 				return
 			}
 			fmt.Println("Installed LaunchAgent:", path)
-			fmt.Println("Access password:", password)
+			fmt.Println("Access password file:", servicePasswordPath())
 			fmt.Println("Load with: launchctl load", path)
 		case "linux":
 			dir := filepath.Join(os.Getenv("HOME"), ".config", "systemd", "user")
@@ -378,7 +459,7 @@ WantedBy=default.target
 				return
 			}
 			fmt.Println("Installed systemd user service:", path)
-			fmt.Println("Access password:", password)
+			fmt.Println("Access password file:", servicePasswordPath())
 			fmt.Println("Enable with: systemctl --user enable --now office-rdp")
 		default:
 			fmt.Println("Service install not supported on", runtime.GOOS)
@@ -401,6 +482,13 @@ WantedBy=default.target
 func servicePasswordPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "office-rdp", "service-password")
+}
+
+// hostPasswordPath is the per-user default location for a generated
+// interactive host password. The file is created with owner-only permissions.
+func hostPasswordPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "office-rdp", "host-password")
 }
 
 // servicePassword persists a password for unattended access so restarts keep
@@ -437,12 +525,12 @@ func resolvePassword(flagValue, file string) string {
 }
 
 func randomPassword() string {
-	buf := make([]byte, 4)
+	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+		// Fail closed rather than falling back to a low-entropy time-derived credential.
+		return ""
 	}
-	n := binary.BigEndian.Uint32(buf) % 1000000
-	return fmt.Sprintf("%06d", n)
+	return base64.RawURLEncoding.EncodeToString(buf)
 }
 
 // openBrowser launches the system default browser for the control panel.

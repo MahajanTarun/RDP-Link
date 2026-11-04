@@ -547,7 +547,20 @@
   frame.addEventListener('mousedown', (ev) => {
     ev.preventDefault();
     const p = toRemote(ev);
-    post('input', { type: 'click', x: p.x, y: p.y, button: ev.button === 2 ? 3 : 1 });
+    // Press and release are separate events so dragging (selecting text,
+    // moving a window, drawing) works instead of only clicking.
+    post('input', { type: 'down', x: p.x, y: p.y, button: ev.button === 2 ? 3 : 1 });
+  });
+  frame.addEventListener('mouseup', (ev) => {
+    const p = toRemote(ev);
+    post('input', { type: 'up', x: p.x, y: p.y, button: ev.button === 2 ? 3 : 1 });
+  });
+  // Release the button even when the pointer leaves the frame, so a drag
+  // cannot leave the host's mouse stuck down.
+  window.addEventListener('mouseup', (ev) => {
+    if (frame.contains(ev.target)) return;
+    const p = toRemote(ev);
+    post('input', { type: 'up', x: p.x, y: p.y, button: ev.button === 2 ? 3 : 1 });
   });
   frame.addEventListener('contextmenu', (ev) => ev.preventDefault());
 

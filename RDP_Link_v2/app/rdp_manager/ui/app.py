@@ -12,7 +12,7 @@ from ..logo import LOGO_PNG
 from ..connection import ConnectionController, shell_quote_cmd
 from ..deploy import copy_setup_command, deploy_receivers
 from ..profiles import ProfileStore, normalize
-from ..viewer_launch import viewer_argv
+from ..viewer_launch import discard_password_file, viewer_argv
 from .dialogs import PasswordPrompt
 from .editor import ProfileEditor
 from .office_panel import OfficePanel
@@ -491,9 +491,11 @@ class UbuntuRDPApp:
             messagebox.showerror("RDP Link", str(e))
 
     def _open_office_viewer(self, addr, password=None):
+        argv = viewer_argv(addr, password)
         try:
-            subprocess.Popen(viewer_argv(addr, password))
+            subprocess.Popen(argv)
         except Exception as e:
+            discard_password_file(argv)
             messagebox.showerror("RDP Link", str(e))
 
     def connect_office_host(self):
@@ -501,9 +503,11 @@ class UbuntuRDPApp:
         if not url:
             return
         password = simpledialog.askstring("RDP Link", "Password (optional):", show="*")
+        argv = viewer_argv(url, password)
         try:
-            subprocess.Popen(viewer_argv(url, password))
+            subprocess.Popen(argv)
         except Exception as e:
+            discard_password_file(argv)
             messagebox.showerror("RDP Link", str(e))
 
     def _signed_peer_list(self, rendezvous_url):
@@ -570,7 +574,12 @@ class UbuntuRDPApp:
                 return
             if not addr.startswith("http"):
                 addr = "http://" + addr
-            subprocess.Popen(viewer_argv(addr))
+            argv = viewer_argv(addr)
+            try:
+                subprocess.Popen(argv)
+            except Exception:
+                discard_password_file(argv)
+                raise
             win.destroy()
         ttk.Button(win, text="Connect", command=connect).pack()
 

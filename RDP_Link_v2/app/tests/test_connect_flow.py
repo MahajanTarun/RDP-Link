@@ -79,6 +79,9 @@ def test_connect_spawns_bridges_via_watchdog(monkeypatch, no_bridges_profile):
 
     monkeypatch.setattr(bridges_mod.watchdog, "spawn", fake_spawn)
     monkeypatch.setattr(bridges_mod, "find_ffmpeg", lambda: "/usr/bin/true")
+    # Permission probes also use watchdog.spawn on macOS; stub them out so the
+    # assertion below only counts the camera and microphone bridges.
+    monkeypatch.setattr(conn_mod, "probe_device", lambda *a, **k: (True, ""))
 
     app = FakeApp()
     ctl = ConnectionController(app)

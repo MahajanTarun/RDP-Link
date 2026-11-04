@@ -138,8 +138,9 @@ func (c *Client) wsURL() (string, http.Header, error) {
 	header := http.Header{}
 	if len(c.PrivateKey) == ed25519.PrivateKeySize {
 		timestamp := peerauth.Timestamp()
+		nonce := peerauth.Nonce()
 		uri := u.RequestURI()
-		peerauth.Apply(header, c.PrivateKey, http.MethodGet, uri, timestamp, nil)
+		peerauth.Apply(header, c.PrivateKey, http.MethodGet, uri, timestamp, nonce, nil)
 	}
 	return u.String(), header, nil
 }
@@ -198,6 +199,17 @@ func (c *Client) connectOnce() error {
 		}
 	}()
 	defer close(done)
+	stopReader := make(chan struct{})
+	if c.Done != nil {
+		go func() {
+			select {
+			case <-c.Done:
+				_ = conn.Close()
+			case <-stopReader:
+			}
+		}()
+	}
+	defer close(stopReader)
 
 	// Streams that are still running, so the guest can cancel them.
 	var streamMu sync.Mutex
@@ -236,6 +248,23 @@ func (c *Client) connectOnce() error {
 			_ = conn.WriteMessage(websocket.TextMessage, out)
 			writeMu.Unlock()
 		}
+		// Never block the WebSocket reader waiting for a worker slot. If all
+		// slots are occupied by long streams, blocking here would prevent the
+		// reader from seeing their Cancel frames and could pin device captures.
+		select {
+		case sem <- struct{}{}:
+		default:
+			if req.Stream {
+				send(reply{Type: "stream", ID: req.ID, Status: http.StatusTooManyRequests,
+					Headers: map[string]string{"Content-Type": "text/plain"}})
+				send(reply{Type: "end", ID: req.ID})
+			} else {
+				send(reply{ID: req.ID, Status: http.StatusTooManyRequests,
+					Headers: map[string]string{"Content-Type": "text/plain"},
+					Body:    base64.StdEncoding.EncodeToString([]byte("relay is busy"))})
+			}
+			continue
+		}
 		if req.Stream {
 			// The cancel function is registered before the goroutine is
 			// started. Otherwise a cancel frame that arrives while the
@@ -245,7 +274,6 @@ func (c *Client) connectOnce() error {
 			streamMu.Lock()
 			streams[req.ID] = cancel
 			streamMu.Unlock()
-			sem <- struct{}{}
 			go func(req request) {
 				defer func() { <-sem }()
 				c.stream(ctx, req, send)
@@ -256,7 +284,6 @@ func (c *Client) connectOnce() error {
 			}(req)
 			continue
 		}
-		sem <- struct{}{}
 		go func(req request) {
 			defer func() { <-sem }()
 			send(c.execute(req))
@@ -349,9 +376,15 @@ func (c *Client) execute(req request) reply {
 		return rep
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
 		rep.Error = err.Error()
+		return rep
+	}
+	if len(data) > maxBody {
+		rep.Status = http.StatusRequestEntityTooLarge
+		rep.Headers = map[string]string{"Content-Type": "text/plain"}
+		rep.Body = base64.StdEncoding.EncodeToString([]byte("response exceeds 32 MiB relay limit"))
 		return rep
 	}
 	headers := map[string]string{}

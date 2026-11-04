@@ -105,16 +105,153 @@ func (a *Agent) defaultAudioInput() string {
 	if a.AudioInput != "" {
 		return a.AudioInput
 	}
-	switch {
-	case haveTool("pactl"):
-		return "pulse:default"
-	case os.Getenv("XDG_SESSION_TYPE") != "":
-		return "pulse:default"
-	default:
-		// avfoundation index 0 is the default audio input on macOS. Without a
-		// loopback device this is the microphone, not system output.
+	switch runtime.GOOS {
+	case "darwin":
+		// A loopback device is the only way to capture system output on
+		// macOS. Prefer one when it is installed; otherwise fall back to the
+		// default input and let the operator choose a device explicitly.
+		if index, ok := findAVFoundationAudio("blackhole", "soundflower", "loopback"); ok {
+			return "avfoundation::" + index
+		}
 		return "avfoundation::0"
+	case "windows":
+		// DirectShow has no "default" alias. Prefer a loopback/virtual cable
+		// device, then the first capture device the driver reports.
+		if name, ok := findDShowAudio("stereo mix", "virtual-audio-capturer", "cable output"); ok {
+			return "dshow:audio=" + name
+		}
+		if name, ok := firstDShowAudio(); ok {
+			return "dshow:audio=" + name
+		}
+		return "dshow:audio=Stereo Mix"
+	default:
+		// On PulseAudio/PipeWire the default *source* is usually a
+		// microphone. The sink's monitor source carries what the machine is
+		// playing, which is what "host audio" means here.
+		if haveTool("pactl") {
+			if source := defaultMonitorSource(); source != "" {
+				return "pulse:" + source
+			}
+		}
+		return "pulse:default"
 	}
+}
+
+// findAVFoundationAudio returns the avfoundation index of the first audio
+// device whose name contains one of the given needles.
+func findAVFoundationAudio(needles ...string) (string, bool) {
+	if !haveTool("ffmpeg") {
+		return "", false
+	}
+	cmd := exec.Command("ffmpeg", "-hide_banner", "-f", "avfoundation",
+		"-list_devices", "true", "-i", "")
+	out, _ := cmd.CombinedOutput()
+	audioSection := false
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(strings.ToLower(line), "avfoundation audio devices") {
+			audioSection = true
+			continue
+		}
+		if strings.Contains(strings.ToLower(line), "avfoundation video devices") {
+			audioSection = false
+			continue
+		}
+		if !audioSection {
+			continue
+		}
+		m := avDeviceLine.FindStringSubmatch(line)
+		if len(m) != 3 {
+			continue
+		}
+		lower := strings.ToLower(m[2])
+		for _, needle := range needles {
+			if strings.Contains(lower, needle) {
+				return m[1], true
+			}
+		}
+	}
+	return "", false
+}
+
+var avDeviceLine = regexp.MustCompile(`\[(\d+)\]\s+(.+)$`)
+
+// findDShowAudio returns the first DirectShow audio device whose name
+// contains one of the given needles.
+func findDShowAudio(needles ...string) (string, bool) {
+	name, ok := scanDShowAudio(needles...)
+	return name, ok
+}
+
+// firstDShowAudio returns the first DirectShow audio capture device.
+func firstDShowAudio() (string, bool) {
+	return scanDShowAudio()
+}
+
+func scanDShowAudio(needles ...string) (string, bool) {
+	if !haveTool("ffmpeg") {
+		return "", false
+	}
+	cmd := exec.Command("ffmpeg", "-hide_banner", "-list_devices", "true",
+		"-f", "dshow", "-i", "dummy")
+	out, _ := cmd.CombinedOutput()
+	audioSection := false
+	for _, line := range strings.Split(string(out), "\n") {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "directshow audio devices") {
+			audioSection = true
+			continue
+		}
+		if strings.Contains(lower, "directshow video devices") {
+			audioSection = false
+			continue
+		}
+		if !audioSection {
+			continue
+		}
+		m := dshowDeviceLine.FindStringSubmatch(line)
+		if len(m) != 2 {
+			continue
+		}
+		name := m[1]
+		if len(needles) == 0 {
+			return name, true
+		}
+		lowerName := strings.ToLower(name)
+		for _, needle := range needles {
+			if strings.Contains(lowerName, needle) {
+				return name, true
+			}
+		}
+	}
+	return "", false
+}
+
+var dshowDeviceLine = regexp.MustCompile(`"([^"]+)"\s+\(audio\)`)
+
+// defaultMonitorSource returns the monitor source of the default PulseAudio
+// sink, which is the machine's playback rather than the microphone.
+func defaultMonitorSource() string {
+	out, err := exec.Command("pactl", "get-default-sink").Output()
+	if err != nil {
+		return ""
+	}
+	sink := strings.TrimSpace(string(out))
+	if sink == "" {
+		return ""
+	}
+	monitor := sink + ".monitor"
+	// Only return a source that actually exists.
+	list, err := exec.Command("pactl", "list", "short", "sources").Output()
+	if err != nil {
+		return monitor
+	}
+	for _, line := range strings.Split(string(list), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == monitor {
+			return monitor
+		}
+	}
+	return ""
 }
 
 func (a *Agent) capabilities() deviceCaps {
@@ -158,7 +295,8 @@ func (a *Agent) handleAudio(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ffmpeg is not installed on the host", http.StatusServiceUnavailable)
 		return
 	}
-	input, err := ffmpegInput(a.defaultAudioInput())
+	audioInput := a.defaultAudioInput()
+	input, err := ffmpegInput(audioInput)
 	if err != nil {
 		http.Error(w, "invalid audio input", http.StatusServiceUnavailable)
 		return
@@ -173,7 +311,7 @@ func (a *Agent) handleAudio(w http.ResponseWriter, r *http.Request) {
 
 	args := []string{"-hide_banner", "-loglevel", "error"}
 	// -re paces synthetic/lavfi inputs; real devices are already realtime.
-	if strings.HasPrefix(a.defaultAudioInput(), "lavfi:") {
+	if strings.HasPrefix(audioInput, "lavfi:") {
 		args = append(args, "-re")
 	}
 	args = append(args, input...)

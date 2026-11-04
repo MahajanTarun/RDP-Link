@@ -22,36 +22,43 @@ func newKey(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
 func TestSignAndVerify(t *testing.T) {
 	pub, priv := newKey(t)
 	timestamp := Timestamp()
-	sig := Sign(priv, http.MethodGet, "/peers", timestamp, nil)
+	nonce := Nonce()
+	sig := Sign(priv, http.MethodGet, "/peers", timestamp, nonce, nil)
 	if sig == "" {
 		t.Fatal("no signature")
 	}
-	if !Verify(pub, http.MethodGet, "/peers", timestamp, nil, sig) {
+	if !Verify(pub, http.MethodGet, "/peers", timestamp, nonce, nil, sig) {
 		t.Fatal("valid signature rejected")
+	}
+	if Verify(pub, http.MethodGet, "/peers", timestamp, nonce+"x", nil, sig) {
+		t.Fatal("signature accepted with a different nonce")
 	}
 }
 
 func TestVerifyRejectsTamperedRequests(t *testing.T) {
 	pub, priv := newKey(t)
 	timestamp := Timestamp()
-	sig := Sign(priv, http.MethodPost, "/register", timestamp, []byte(`{"a":1}`))
+	nonce := Nonce()
+	sig := Sign(priv, http.MethodPost, "/register", timestamp, nonce, []byte(`{"a":1}`))
 	cases := []struct {
 		name   string
 		method string
 		uri    string
+		nonce  string
 		body   []byte
 	}{
-		{"other path", http.MethodPost, "/policy", []byte(`{"a":1}`)},
-		{"other method", http.MethodGet, "/register", []byte(`{"a":1}`)},
-		{"other body", http.MethodPost, "/register", []byte(`{"a":2}`)},
-		{"other timestamp", http.MethodPost, "/register", []byte(`{"a":1}`)},
+		{"other path", http.MethodPost, "/policy", nonce, []byte(`{"a":1}`)},
+		{"other method", http.MethodGet, "/register", nonce, []byte(`{"a":1}`)},
+		{"other body", http.MethodPost, "/register", nonce, []byte(`{"a":2}`)},
+		{"other nonce", http.MethodPost, "/register", nonce + "x", []byte(`{"a":1}`)},
+		{"other timestamp", http.MethodPost, "/register", nonce, []byte(`{"a":1}`)},
 	}
 	for _, tc := range cases {
 		ts := timestamp
 		if tc.name == "other timestamp" {
 			ts = "1"
 		}
-		if Verify(pub, tc.method, tc.uri, ts, tc.body, sig) {
+		if Verify(pub, tc.method, tc.uri, ts, tc.nonce, tc.body, sig) {
 			t.Fatalf("%s: tampered request accepted", tc.name)
 		}
 	}
@@ -99,7 +106,8 @@ func TestSendAddsSignatureHeaders(t *testing.T) {
 		}
 		body := []byte(`{"peerId":"x"}`)
 		if !Verify(pub, r.Method, r.URL.RequestURI(),
-			r.Header.Get(HeaderTimestamp), body, r.Header.Get(HeaderSignature)) {
+			r.Header.Get(HeaderTimestamp), r.Header.Get(HeaderNonce),
+			body, r.Header.Get(HeaderSignature)) {
 			http.Error(w, "signature", http.StatusUnauthorized)
 			return
 		}
@@ -120,8 +128,9 @@ func TestSendAddsSignatureHeaders(t *testing.T) {
 func TestApplySetsAllHeaders(t *testing.T) {
 	pub, priv := newKey(t)
 	header := http.Header{}
-	Apply(header, priv, http.MethodGet, "/peers", Timestamp(), nil)
-	for _, name := range []string{HeaderPeer, HeaderTimestamp, HeaderPublicKey, HeaderSignature} {
+	nonce := Nonce()
+	Apply(header, priv, http.MethodGet, "/peers", Timestamp(), nonce, nil)
+	for _, name := range []string{HeaderPeer, HeaderTimestamp, HeaderNonce, HeaderPublicKey, HeaderSignature} {
 		if header.Get(name) == "" {
 			t.Fatalf("header %s missing", name)
 		}

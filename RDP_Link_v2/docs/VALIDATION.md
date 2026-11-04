@@ -1,6 +1,6 @@
 # Validation and working-status matrix
 
-Version 0.2.0. Last validated: 2026-11-03.
+Version 0.2.0. Last validated: 2026-11-04.
 
 Product name: **RDP Link** (binary identifiers such as `office-rdp` stay for
 compatibility). This page records what was actually exercised, not just what
@@ -17,7 +17,7 @@ this validation pass, on physical hardware.
 | --- | --- | --- |
 | **macOS 27.2 (arm64)** | **Working — live.** 1512×982 JPEG stream; `/info`, `/frame.jpg`, ETag `304`, `/input`, `/ui`, `/quit` verified (all behind the session/header credential). Served a live session to the Linux PC and to the Android phone. | **Working — live.** Desktop viewer rendered the live Linux desktop (1366×768) and the Android screen (1080×2340 · 35 fps). Browser guest works too (`1280×800 · 22 fps` with the session cookie). |
 | **Linux (Ubuntu 24.04, X11)** | **Working — live.** Real X session at 1366×768 (not Xvfb): `/info`, JPEG `/frame.jpg` (92,546 bytes), ETag `304`, `/input` 204, `/ui` 200, `/quit` 204. arm64 `.deb` also fully validated. | **Working — live.** `rdp-link` viewer on the Linux PC displayed the macOS host at 1512×982 · 6 fps. |
-| **Windows (installer + app)** | **Working under Wine — test pattern.** Real GDI capture needs Windows hardware; under Wine `office-rdp.exe --host --test-pattern` served `/info`, a 1280×800 JPEG, changing ETags, `/input` 204 and `/ui` 200. | **Working — live under Wine.** `rdp-link.exe` (PyInstaller, no Python needed) renders the Ant Design launcher; `--viewer --probe` returned a 1512×982 frame. Browser guest shows `1280×800 · fps`. |
+| **Windows (installer + app)** | **Working under Wine — test pattern.** Real GDI capture needs Windows hardware; the rebuilt 2026-11-04 `office-rdp.exe --host --test-pattern` served `/info` 200, a 25,161-byte 1280×800 JPEG, `/input` 204, `/session` with an HttpOnly `SameSite=Strict` cookie, and a `POST /media-token` token that opened `/frame.jpg` but was rejected on `/info`. `?password=` returned 401. | **Working — live under Wine.** The rebuilt `rdp-link.exe` (PyInstaller, no Python needed) renders the Ant Design launcher; `--viewer --probe` returned a 26,423-byte 1280×800 frame from the Windows host. Browser guest shows `1280×800 · fps`. |
 | **Android 16 (SM-S711B)** | **Working — live on a physical device.** MediaProjection host on port 8095: `/info`, JPEG frames (124,444 bytes), accessibility input injection changed the on-screen password (768516 → 227170). The host now encodes PNG on demand and answers with an ETag. | **Working — live.** Full-screen `ViewerActivity` displayed the macOS host; status tag `1512×982`. Portrait, landscape and 100 % custom scaling verified on the phone; the same APK also ran in landscape on the API 36 emulator, where the new session login rendered `1280×800 · 11 fps`. |
 
 **WAN — working through the relay.** The host dials out to the rendezvous; no
@@ -140,7 +140,7 @@ A full code review produced six findings; all six are fixed and verified.
 | --- | --- | --- | --- |
 | 1 | **Relay deadlock**: a guest that left an audio/camera stream kept the host streaming; the reply buffer filled and the reader blocked, freezing the whole tunnel | Non-blocking reader, `pending` entry always released, `cancel` frame sent to the host on disconnect, host cancels the local request | `TestReadLoopNeverBlocksOnAbandonedStream`, `TestProxyReleasesPendingEntry`, `TestStreamStopsWhenCancelled`; live relay: the audio stream was aborted after 3 s, the host `ffmpeg` was gone and the tunnel still served frames and a second stream |
 | 2 | **Unauthenticated rendezvous**: anybody could register a peer ID, list the registry or rewrite a peer's policy | Ed25519 request signing (`core/peerauth`); the peer ID must match the signing key; key pinning; `/peers` needs a signature; `/resolve` is rate limited | `TestRegisterRequiresSignature`, `TestPeerCannotClaimAnotherPeerID`, `TestPolicyIsPerPeer`; live: anonymous `/peers` -> 401, `office-rdp --list-peers` -> the registry |
-| 3 | **Password in URLs and process lists**: `?password=` in every device URL, `--password` in the argv, password in `Referer` | `POST /session` -> HttpOnly `SameSite=Strict` cookie; `X-Office-Password` header; `?token=` for header-less players; `--password-file` for services and the launcher | `TestPasswordInQueryIsRejected`, `TestSessionCookieAndToken`; live: `?password=` -> 401, cookie -> 200, token -> 200 |
+| 3 | **Password in URLs and process lists**: `?password=` in every device URL, `--password` in the argv, password in `Referer` | `POST /session` -> HttpOnly `SameSite=Strict` cookie; `X-Office-Password` header; `POST /media-token` issues a 2-minute read-only token for header-less players (`?token=`); `--password-file` for services and the launcher; generated passwords are stored `0600` and never printed | `TestPasswordInQueryIsRejected`, `TestSessionCookieAndToken`; live: `?password=` -> 401, cookie -> 200, media token -> 200 on `/frame.jpg` and 401 on `/info` |
 | 4 | **Permissive WebSocket origin and open `/info`** | `Origin` check on upgrades and on state-changing requests; `/info` and `/displays` require credentials; bounded throttle table; `X-Forwarded-For` only trusted with the per-process relay secret | `TestCrossOriginRequestRejected`, `TestForwardedForNeedsRelaySecret`, `TestFailureTableIsBounded` |
 | 5 | **Shell injection in the setup assistant** (the workspace path contains an apostrophe) | `shlex.quote` plus AppleScript escaping | `test_mac_firewall_script_quotes_paths_with_spaces`, `test_mac_firewall_script_escapes_quotes`; the generated script was executed with `osascript` and the path arrived intact |
 | 6 | **Dead WebRTC signalling** (`ws`/`wss` bug, `/signal` route, `pion/webrtc` dependency) | Removed the signalling/transport/protocol packages, the `/signal` route and the WebRTC client page; the relay page now explains itself | `go build ./...` clean, `go.mod` no longer lists `pion/webrtc` as a direct dependency |
@@ -180,6 +180,9 @@ Additional fixes from the same review:
 | Desktop viewer, background input | macOS host → Tk viewer | live frame at `1280×800 · 11 fps`; input events are queued off the UI thread |
 | Desktop viewer, probe | macOS host → `office_viewer.py --probe` | `probe: OK 26003 bytes 1280x800` with the right password, `401` with a wrong one |
 | `--password-file` | macOS host | the agent starts with the password from a `0600` file; the LaunchAgent and the systemd unit use the same flag |
+| Generated password | macOS host | no password flag: a 24-byte random password is written to `~/.config/office-rdp/host-password` (`0600`) and is not printed or stored in `gui.json` |
+| Media token scope | macOS host | `POST /media-token` with the session cookie returns a 2-minute token; it opens `/frame.jpg` but is rejected on `/info` |
+| Android relay tunnel | Android host → relay | the Go relay client is started by `HostService`; requires a live device/relay re-run to confirm the tunnel appears in `/resolve` |
 | Relay, signed tunnel | macOS host → relay | tunnel connected, frame `200` through `/t/<peer>/`, audio stream aborted by the guest, host `ffmpeg` stopped, the tunnel stayed healthy |
 | Relay, admin token | relay | `--list-peers` without the token shows no address, with `--admin-token` the LAN address appears |
 
@@ -206,7 +209,7 @@ go vet ./...            clean
 go test ./...           all packages pass
 go build ./...          ok
 pyflakes                clean
-pytest                  72 passed
+pytest                  80 passed
 ALL TESTS PASSED
 
 $ bash scripts/security-scan.sh
@@ -349,14 +352,15 @@ The native arm64 package is fully validated and the code path is identical.
 | `dist/macos/RDPLink-installer.pkg` | 46 MB | double-click installer; postinstall adds the agent to the Application Firewall and installs the login service |
 | `dist/windows/RDPLink-setup.exe` | 22 MB | NSIS; ships `rdp-link.exe`, CGO `office-rdp.exe`, rendezvous, shortcuts, Add/Remove Programs, firewall rule |
 | `dist/windows/rdp-link.exe` | 17 MB | PyInstaller onefile launcher + bundled viewer (no Python on target) |
-| `dist/linux/rdplink-linux-arm64.deb` | 22 MB | `office-rdp`, `office-rdp-rendezvous`, `rdp-link`, docs; postinst loads the modules and the uinput rule |
-| `dist/linux/rdplink-linux-amd64.deb` | 23 MB | same payload for x86-64 |
+| `dist/linux/rdplink-linux-arm64.deb` | 23 MB | `office-rdp`, `office-rdp-rendezvous`, `rdp-link`, docs; postinst loads the modules and the uinput rule |
+| `dist/linux/rdplink-linux-amd64.deb` | 24 MB | same payload for x86-64 |
 | `dist/linux/rdplink-linux.tar.gz` | 74 MB | both architectures plus the launcher |
-| `dist/android/RDPLink-android-release.apk` | 33 MB | release-signed, `versionCode 2`, Ant Design UI, guest viewer bundled |
-| `dist/android/RDPLink-android-release.aab` | 13 MB | Play upload bundle |
+| `dist/android/RDPLink-android-release.apk` | 49 MB | signed with the Office RDP release key (`CN=Office RDP, O=Eminent AI Labs`, SHA-256 `de7382e4…9283`), `versionCode 2`, Ant Design UI, guest viewer bundled |
+| `dist/android/RDPLink-android-release.aab` | 19 MB | Play upload bundle, same release key |
 
 The Android package grew because the Go core (identity, signed rendezvous
-requests) is now linked into the app as a native library for all four ABIs.
+requests and the relay tunnel) is linked into the app as a native library for
+all four ABIs.
 
 ## Platform notes and not verified here
 

@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ClipboardManager
 import android.graphics.Path
+import android.graphics.PointF
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -70,6 +71,43 @@ class InputAccessibilityService : AccessibilityService() {
         val stroke = GestureDescription.StrokeDescription(path, 0, 50)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
+    }
+
+    @Volatile
+    private var dragStart: PointF? = null
+
+    @Volatile
+    private var dragCurrent: PointF? = null
+
+    /** Begin a press. The matching [pointerUp] decides tap versus drag. */
+    fun pointerDown(x: Float, y: Float) {
+        dragStart = PointF(x, y)
+        dragCurrent = PointF(x, y)
+    }
+
+    /** Track the pointer while the button is held. */
+    fun pointerMove(x: Float, y: Float) {
+        if (dragStart != null) dragCurrent = PointF(x, y)
+    }
+
+    /** Finish a press: a small movement is a tap, a larger one is a swipe. */
+    fun pointerUp(x: Float, y: Float) {
+        val start = dragStart ?: return
+        dragStart = null
+        val end = dragCurrent ?: PointF(x, y)
+        dragCurrent = null
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        if (dx * dx + dy * dy < 64f) {
+            tap(x, y)
+            return
+        }
+        val path = Path().apply {
+            moveTo(start.x, start.y)
+            lineTo(end.x, end.y)
+        }
+        val stroke = GestureDescription.StrokeDescription(path, 0, 200)
+        dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 
     fun scroll(direction: Int) {

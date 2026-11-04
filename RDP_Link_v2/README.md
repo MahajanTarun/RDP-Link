@@ -67,12 +67,15 @@ A guest connects with any of:
   and use **Connect to a device**
 - the viewer directly:
   `cd app && python3 office_viewer.py http://<host>:8088 --password <secret>`
-- a browser at `http://<host>:8088/` (password in the page, or `#pw=<secret>`)
-- the Android app: enter `host:port` (or `host:port/#pw=<secret>`) and Connect
+- a browser at `http://<host>:8088/` (enter the password in the page)
+- the Android app: enter `host:port` and tap Connect
 
-The host prints its LAN address, WAN address, peer ID, and a random password
-on startup. `--password` pins a password; `--install-service` stores it in the
-user service so unattended access survives reboots.
+The host prints its LAN address, WAN address and peer ID on startup. When no
+`--password` is given, a random access password is generated once and stored in
+`~/.config/office-rdp/host-password` (`0600`); the agent prints the path, never
+the password. `--password` pins a password; `--install-service` points the user
+service at the same private password file so unattended access survives
+reboots.
 
 ## Build and test
 

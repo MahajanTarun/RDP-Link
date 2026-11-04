@@ -9,6 +9,25 @@ with the current interpreter.
 import os
 import sys
 import tempfile
+import time
+
+
+def _cleanup_stale_password_files(max_age=3600):
+    """Remove abandoned viewer credential files from failed launches."""
+    now = time.time()
+    try:
+        names = os.listdir(tempfile.gettempdir())
+    except OSError:
+        return
+    for name in names:
+        if not (name.startswith("rdplink-pw-") and name.endswith(".txt")):
+            continue
+        path = os.path.join(tempfile.gettempdir(), name)
+        try:
+            if now - os.stat(path).st_mtime > max_age:
+                os.unlink(path)
+        except OSError:
+            pass
 
 
 def write_password_file(password):
@@ -26,6 +45,7 @@ def write_password_file(password):
 
 def viewer_argv(address, password=None):
     """Return the argv list that opens the viewer for *address*."""
+    _cleanup_stale_password_files()
     tail = [address]
     if password:
         tail += ["--password-file", write_password_file(password)]
@@ -36,3 +56,12 @@ def viewer_argv(address, password=None):
     app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     script = os.path.join(app_root, "office_viewer.py")
     return [sys.executable, script] + tail
+
+
+def discard_password_file(argv):
+    """Remove the private password file if the viewer could not be spawned."""
+    try:
+        index = argv.index("--password-file")
+        os.unlink(argv[index + 1])
+    except (ValueError, IndexError, OSError):
+        pass

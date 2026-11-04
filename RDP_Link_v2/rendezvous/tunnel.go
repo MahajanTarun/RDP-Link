@@ -188,6 +188,15 @@ var responseHeaders = map[string]bool{
 
 // handleProxy forwards /t/<peerId>/<path> to the host over its tunnel.
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
+	// The host sees the relay's loopback request, not the browser's Origin.
+	// Enforce the browser boundary here before forwarding the request.
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || !strings.EqualFold(u.Host, r.Host) {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
 	rest := strings.TrimPrefix(r.URL.Path, "/t/")
 	peerID, tail, hasTail := strings.Cut(rest, "/")
 	peerID = normalizeID(peerID)
@@ -225,11 +234,17 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	streaming := tail == "/audio" || tail == "/camera.mjpg"
+	streaming := tail == "/audio" || tail == "/camera.mjpg" ||
+		((tail == "/download" || strings.HasPrefix(tail, "/port/")) &&
+			(r.Method == http.MethodGet || r.Method == http.MethodHead))
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRelayBody))
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRelayBody+1))
 	if err != nil {
 		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+	if len(body) > maxRelayBody {
+		http.Error(w, "request exceeds 32 MiB relay limit", http.StatusRequestEntityTooLarge)
 		return
 	}
 

@@ -298,6 +298,8 @@ class Viewer:
         self._last_remote = ""
         self._stop = False
         self._token = ""
+        self._token_expiry = 0
+        self._drag_active = False
         self._resize_after = None
         self._move_after = None
         self._pending_move = None
@@ -313,7 +315,8 @@ class Viewer:
         self._fps_started = time.time()
 
         self.canvas.bind("<Motion>", self._on_move)
-        self.canvas.bind("<Button-1>", self._on_click)
+        self.canvas.bind("<ButtonPress-1>", self._on_press)
+        self.canvas.bind("<ButtonRelease-1>", self._on_release)
         self.canvas.bind("<Button-3>", self._on_right_click)
         self.canvas.bind("<MouseWheel>", self._on_wheel)
         self.canvas.bind("<Button-4>", lambda e: self._on_wheel(e, 1))
@@ -329,10 +332,9 @@ class Viewer:
     # -- devices -------------------------------------------------------------
     def _open_devices(self):
         """Open the control panel, which hosts audio/camera/serial/ports."""
-        url = self.host_url + "/ui"
-        if self.password:
-            url += "#pw=" + urllib.parse.quote(self.password)
-        webbrowser.open(url)
+        # The control panel asks for the password itself and exchanges it for
+        # a session cookie. Do not put the credential in a browser URL.
+        webbrowser.open(self.host_url + "/ui")
         self._set_status("Opened device panel in the browser", "connecting")
 
     def _toggle_audio(self):
@@ -462,29 +464,35 @@ class Viewer:
         return self.host_url + path
 
     def _session_token(self):
-        """Exchange the password for a session token.
+        """Exchange the password for a short-lived media token.
 
         Media players such as ffplay cannot send headers, so they get a
-        short-lived token in the URL instead of the password.
+        purpose-scoped token in the URL instead of the password or a full
+        session. The token expires after two minutes and only works on
+        read-only media paths.
         """
-        if self._token:
+        if self._token and time.time() < self._token_expiry:
             return self._token
         if not self.password:
             return ""
         try:
             request = urllib.request.Request(
-                self.host_url + "/session", method="POST", data=b"{}",
+                self.host_url + "/media-token", method="POST", data=b"{}",
                 headers={"Content-Type": "application/json",
                          "X-Office-Password": self.password})
             with urllib.request.urlopen(request, timeout=5) as response:
                 data = json.load(response)
             self._token = data.get("token") or ""
+            expires = int(data.get("expiresIn") or 120)
+            # Refresh a little before the server-side expiry.
+            self._token_expiry = time.time() + max(30, expires - 15)
         except Exception:
             self._token = ""
+            self._token_expiry = 0
         return self._token
 
     def _media_url(self, path):
-        """URL for a media element, authenticated with a session token."""
+        """URL for a media element, authenticated with a media token."""
         token = self._session_token()
         if not token:
             return self.host_url + path
@@ -671,6 +679,18 @@ class Viewer:
         x, y = self._pending_move
         self._pending_move = None
         self._post({"type": "move", "x": x, "y": y})
+
+    def _on_press(self, event):
+        x, y = self._to_remote(event.x, event.y)
+        self._drag_active = True
+        self._post({"type": "down", "x": x, "y": y, "button": 1})
+
+    def _on_release(self, event):
+        if not self._drag_active:
+            return
+        self._drag_active = False
+        x, y = self._to_remote(event.x, event.y)
+        self._post({"type": "up", "x": x, "y": y, "button": 1})
 
     def _on_click(self, event):
         x, y = self._to_remote(event.x, event.y)
