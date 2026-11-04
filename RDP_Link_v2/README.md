@@ -10,11 +10,17 @@
 </p>
 
 <p align="center">
+  Built and maintained by
+  <a href="https://www.eminentailabs.com"><strong>Eminent AI Labs Pvt. Ltd.</strong></a>
+</p>
+
+<p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-22c55e.svg" /></a>
   <img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-1677ff.svg" />
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20Android-111827.svg" />
   <img alt="Go 1.26" src="https://img.shields.io/badge/Go-1.26-00ADD8.svg" />
   <img alt="Tests" src="https://img.shields.io/badge/tests-80%20passing-brightgreen.svg" />
+  <a href="https://www.eminentailabs.com"><img alt="Built by Eminent AI Labs" src="https://img.shields.io/badge/built%20by-Eminent%20AI%20Labs-7c3aed.svg" /></a>
 </p>
 
 <p align="center">
@@ -44,8 +50,29 @@ refers to the product, not to Microsoft's protocol.
 > camera/USB kernel extensions and store publishing. See
 > [Known limitations](#known-limitations) and [`docs/VALIDATION.md`](docs/VALIDATION.md).
 
+## Built by Eminent AI Labs
+
+RDP Link is designed, developed and maintained by
+**[Eminent AI Labs Pvt. Ltd.](https://www.eminentailabs.com)** — an independent
+software company building practical, self-hostable tools.
+
+| | |
+| --- | --- |
+| **Company** | Eminent AI Labs Pvt. Ltd. |
+| **Website** | [www.eminentailabs.com](https://www.eminentailabs.com) |
+| **Product** | RDP Link (this repository) |
+| **Platforms** | macOS · Linux · Windows · Android |
+| **License** | MIT — free and open source |
+| **Support** | Use the contact details on the company website for business, partnership, security or commercial-support enquiries. |
+
+The company owns the release signing key used for the Android build and
+maintains the CI, packaging and validation process described in this document.
+RDP Link is also released as open source under the MIT license, so you can fork,
+audit, self-host and redistribute it under the terms in [`LICENSE`](LICENSE).
+
 ## Table of contents
 
+- [Built by Eminent AI Labs](#built-by-eminent-ai-labs)
 - [Downloads](#downloads-v020)
 - [Features](#features)
 - [How it works](#how-it-works)
@@ -529,10 +556,12 @@ RDP Link is released under the **MIT License** — free to use, copy, modify,
 merge, publish, distribute, sublicense and sell, for personal or commercial
 work, provided the copyright notice and permission notice are retained.
 
+Copyright © 2026 **Eminent AI Labs Pvt. Ltd.** and RDP Link contributors.
+
 See [`LICENSE`](LICENSE) for the full text.
 
 ```text
-MIT License — Copyright (c) 2026 RDP Link contributors
+MIT License — Copyright (c) 2026 Eminent AI Labs Pvt. Ltd. and RDP Link contributors
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -577,8 +606,11 @@ license.
 ---
 
 <p align="center">
-  <sub>RDP Link is an independent project. Microsoft, Windows and Remote Desktop
-  are trademarks of Microsoft Corporation. Android is a trademark of Google LLC.
-  macOS is a trademark of Apple Inc. This project is not affiliated with or
-  endorsed by any of them.</sub>
+  <sub>
+    © 2026 <a href="https://www.eminentailabs.com">Eminent AI Labs Pvt. Ltd.</a> —
+    RDP Link is an independent project. Microsoft, Windows and Remote Desktop
+    are trademarks of Microsoft Corporation. Android is a trademark of Google LLC.
+    macOS is a trademark of Apple Inc. This project is not affiliated with or
+    endorsed by any of them.
+  </sub>
 </p>
