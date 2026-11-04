@@ -41,7 +41,7 @@ any pair can be tested host ↔ guest without a rendezvous server.
 | Tool | What it checks |
 | --- | --- |
 | `go vet`, `go test`, `go build` | Compilation, races in unit tests, protocol/identity/pairing logic |
-| `pytest` (95 tests) + `pyflakes` | Launcher helpers, CLI (headless connect/probe/clipboard/input), profile store, keyboard/scroll mapping, viewer argv, panning logic |
+| `pytest` (96 tests) + `pyflakes` | Launcher helpers, CLI (headless connect/probe/clipboard/input), profile store, keyboard/scroll mapping, viewer argv, panning logic |
 | `gosec` | Go static security analysis (medium and above) |
 | `govulncheck` | Known vulnerabilities reachable from the module graph |
 | `shellcheck` | All build and test shell scripts |

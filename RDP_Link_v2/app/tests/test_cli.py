@@ -240,3 +240,20 @@ def test_office_binary_finds_portable_tarball(tmp_path, monkeypatch):
     monkeypatch.setattr(cli.sys, "executable", str(launcher))
     monkeypatch.setenv("PATH", "")
     assert cli.office_binary() == str(agent)
+
+
+def test_install_and_uninstall_cli(tmp_path, monkeypatch, capsys):
+    bindir = tmp_path / "bin"
+    monkeypatch.setenv("RDPLINK_CLI_BIN", str(bindir))
+    monkeypatch.setattr(cli, "_launcher_argv", lambda: ["/bin/echo"])
+    monkeypatch.setattr(cli, "_agent_paths", lambda: {})
+    assert cli.main(["--install-cli"]) == 0
+    wrapper = bindir / "rdp-link"
+    assert wrapper.exists()
+    assert oct(wrapper.stat().st_mode & 0o777) == "0o755"
+    assert "exec /bin/echo" in wrapper.read_text()
+    assert "installed:" in capsys.readouterr().out
+
+    assert cli.main(["--uninstall-cli"]) == 0
+    assert not wrapper.exists()
+    assert "removed:" in capsys.readouterr().out

@@ -58,6 +58,25 @@ esac
 SH
 chmod +x "$APP_DST/Contents/MacOS/office-rdp"
 
+echo "==> Create CLI wrappers (rdp-link, rendezvous)"
+cat > "$APP_DST/Contents/MacOS/rdp-link" <<'SH'
+#!/bin/sh
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/RDP Link" "$@"
+SH
+chmod +x "$APP_DST/Contents/MacOS/rdp-link"
+
+cat > "$APP_DST/Contents/MacOS/office-rdp-rendezvous" <<'SH'
+#!/bin/sh
+DIR="$(cd "$(dirname "$0")" && pwd)"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  arm64) exec "$DIR/tools/office-rdp-rendezvous-arm64" "$@" ;;
+  *)     exec "$DIR/tools/office-rdp-rendezvous-amd64" "$@" ;;
+esac
+SH
+chmod +x "$APP_DST/Contents/MacOS/office-rdp-rendezvous"
+
 echo "==> Codesign"
 IDENTITY="${CODESIGN_IDENTITY:--}"
 SIGN_OPTS=("--force" "--deep" "--sign" "$IDENTITY")

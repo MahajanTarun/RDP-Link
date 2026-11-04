@@ -372,10 +372,32 @@ $ rdp-link --displays             → 0
 $ rdp-link --list                 → legacy FreeRDP profiles
 ```
 
-Unit tests (`app/tests/test_cli.py`, 15 tests) cover probe/save, auth failure,
+Unit tests (`app/tests/test_cli.py`, 16 tests) cover probe/save, auth failure,
 clipboard ordering, click/type payloads, remote status, profile dispatch,
-`--json`, the “remote option without --connect” error, and a subprocess check
-that importing the CLI does not load `tkinter`.
+`--json`, the “remote option without --connect” error, portable-tarball agent
+lookup, `--install-cli`/`--uninstall-cli`, and a subprocess check that
+importing the CLI does not load `tkinter`.
+
+CLI installation on macOS and Windows:
+
+```
+# macOS: wrapper on PATH (tested with RDPLINK_CLI_BIN and the frozen .app)
+$ rdp-link --install-cli
+installed: /tmp/rdplink-cli/rdp-link
+$ /tmp/rdplink-cli/rdp-link --version
+RDP Link 0.2.0
+
+# Windows: the NSIS installer manages the system PATH
+$ wine RDPLink-setup.exe /S
+$ wine reg query "HKLM\...\Environment" /v Path
+  ...;C:\Program Files\RDP Link
+$ wine "C:\Program Files\RDP Link\uninstall.exe" /S
+  ... (the install directory is removed again)
+```
+
+On macOS the `.pkg` postinstall writes `/usr/local/bin/rdp-link`,
+`office-rdp` and `office-rdp-rendezvous`; the `.dmg` exposes
+`RDP Link.app/Contents/MacOS/rdp-link` and `--install-cli` links it.
 
 ## Artifacts
 

@@ -26,6 +26,7 @@ CLI_FLAGS = {
     "--open", "--json", "--password", "--password-file", "--rendezvous",
     "--port", "--display", "--read-only", "--test-pattern", "--relay-insecure",
     "--relay-ca", "--timeout", "--version", "-V", "--help", "-h",
+    "--install-cli", "--uninstall-cli",
 }
 
 

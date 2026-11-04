@@ -111,9 +111,12 @@ from GitHub — download, install, connect.
 | **Android** 10+ (API 29+) | [`RDPLink-android-release.apk`](releases/RDPLink-android-release.apk) · 49 MB | Sideload the APK (allow "Install unknown apps" for your file manager). |
 | **Android** (Play upload) | [`RDPLink-android-release.aab`](releases/RDPLink-android-release.aab) · 19 MB | Upload bundle for Google Play. |
 
-The Linux `.deb` and tarball also include the **headless `rdp-link` CLI** and the
+Every desktop package includes the **headless `rdp-link` CLI** and the
 `office-rdp` agent — share, connect, capture a screenshot, read the clipboard or
-send input entirely from a terminal, with no GUI or X server. See
+send input entirely from a terminal, with no GUI or X server. On macOS the
+`.pkg` installs `/usr/local/bin/rdp-link`, the `.dmg` app exposes
+`Contents/MacOS/rdp-link` (`--install-cli` links it), and the Windows installer
+adds `C:\Program Files\RDP Link` to `PATH`. See
 [Headless CLI](#headless-cli-no-gui). The same flags work on macOS and Windows.
 
 ### Verify your download
@@ -134,13 +137,13 @@ shasum -a 256 -c SHA256SUMS        # macOS / Linux
 4094fa36600f63acb23473b3f25b0f9893bb05e5833ff0317021bbee28317aef  LICENSE
 2e026d69ae006fc4e1b35e89b62c9c74edc50d89cbf118b08ee0abe4b31f015f  RDPLink-android-release.aab
 ce89cf4c8bcfbec4d519a4d0cc23e430a25b6c5ee5c3d9a117380a4594628dbb  RDPLink-android-release.apk
-75790df75da5b2de2c98855a20b64e7065afc0ff5f558e1363ae48ba057378f8  RDPLink-installer.pkg
-6ec25bdfcb9ff30797bce341774f4cb5635de101defdce08935416095deaf785  RDPLink-macos.dmg
-a861a4ea94ff2481cfec876845a5843ccf3847d23858d1ec033fc5f4eda08d8e  RDPLink-setup.exe
+3cf9de56c26fb1a33ebac25db40ea8efb8ac079cf61e0df520de1743c2e5e2af  RDPLink-installer.pkg
+f1f0f7f6341e16148d5672e7cd5feec0df678861eb59b735862e36acba763282  RDPLink-macos.dmg
+a5d0fa6d4c4552523832dda2e933493fea1f3531f598060b9bf13651909a9ec8  RDPLink-setup.exe
 79c69073d330840bbbe6531957acf4e36b348569e1fc56ea59e3ab0e1bb627b1  THIRD_PARTY_NOTICES.md
-c8c9e00fae0046cc4d91d84bdc3f9523504b05e837ccd7affa9981f506bf0e7c  rdplink-linux-amd64.deb
-c0b0d1a2bd0cf9e37351010a45fb09e925000e77e5bbff25d48223e0cee91156  rdplink-linux-arm64.deb
-19f50c77f4cce8549e54440491e8aa36d3e50630c55a8c4f8828fd6167c4b67f  rdplink-linux.tar.gz
+834dfc67f6673bf4f206d8e6ee8d6174e4c5be721959706c04e13c93b8a938fc  rdplink-linux-amd64.deb
+d1fcc1af58b265f819b39698e6d87e41473cac52161cdfe60c7af1891eceb439  rdplink-linux-arm64.deb
+ad939773fc4878e9946ca3ac90587d7cc1182fe901ab2bf4aea5d7e8c775817a  rdplink-linux.tar.gz
 ```
 
 </details>
@@ -338,8 +341,33 @@ Minimum: Android 10 (API 29). Target: Android 16 (API 36).
 
 `rdp-link` is also a full command-line client. It never imports tkinter, so it
 works over SSH, in a container, or on a server with no display. The same flags
-work on Linux, macOS and Windows; the Linux packages put `rdp-link` and
-`office-rdp` on `PATH`.
+work on Linux, macOS and Windows.
+
+### Install the command
+
+| Platform | How `rdp-link` gets on PATH |
+| --- | --- |
+| **Linux `.deb`** | Preinstalled as `/usr/bin/rdp-link` (also `office-rdp` and `office-rdp-rendezvous`). |
+| **Linux tarball** | `./rdp-link --install-cli` writes a wrapper to `/usr/local/bin` or `~/.local/bin`. |
+| **macOS `.pkg`** | The postinstall writes `/usr/local/bin/rdp-link`, `office-rdp` and `office-rdp-rendezvous`. |
+| **macOS `.dmg`** | Run `"/Applications/RDP Link.app/Contents/MacOS/rdp-link" --install-cli`. |
+| **Windows installer** | Adds `C:\Program Files\RDP Link` to the system `PATH`; open a new terminal. |
+| **Any platform** | `rdp-link --install-cli` / `rdp-link --uninstall-cli` (macOS/Linux wrappers, Windows user `PATH`). |
+
+`--install-cli` is idempotent. On macOS/Linux it prefers `/usr/local/bin` and
+falls back to `~/.local/bin`; set `RDPLINK_CLI_BIN` to choose another directory.
+On Windows it edits the per-user `PATH` (no admin prompt) and broadcasts the
+environment change.
+
+```sh
+# macOS (DMG install, one-time)
+"/Applications/RDP Link.app/Contents/MacOS/rdp-link" --install-cli
+rdp-link --version
+
+# Windows (PowerShell), for a portable copy or if PATH is not set yet:
+& "C:\Program Files\RDP Link\rdp-link.exe" --install-cli
+rdp-link --version
+```
 
 ```sh
 # Who am I?
@@ -390,6 +418,7 @@ rdp-link --connect-profile "Profile Name"
 | `--share` | Run the host agent headless; `--port`, `--display`, `--read-only`, `--test-pattern`, `--rendezvous`, `--relay-*` apply. |
 | `--doctor`, `--displays`, `--peers` | Delegate to the Go agent's diagnostics/registry commands. |
 | `--list`, `--connect-profile` | Legacy FreeRDP profiles (unchanged). |
+| `--install-cli`, `--uninstall-cli` | Put `rdp-link`/`office-rdp` on PATH (wrappers on macOS/Linux, user PATH on Windows). |
 | `--help`, `--version` | Usage / version, no GUI import. |
 
 Exit codes: `0` success, `1` connection/authentication/runtime failure, `2`
@@ -546,7 +575,7 @@ bash scripts/security-scan.sh   # gosec, govulncheck, shellcheck, license audit
 bash scripts/license-audit.sh   # linked Go modules must all be permissive
 ```
 
-Current state: **95 Python tests**, all Go packages pass, race detector clean,
+Current state: **96 Python tests**, all Go packages pass, race detector clean,
 security scan clean. The methodology, devices and reproducible commands are in
 [`docs/TESTING.md`](docs/TESTING.md).
 

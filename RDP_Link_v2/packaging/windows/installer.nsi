@@ -32,6 +32,12 @@ VIAddVersionKey "ProductVersion"  "${VERSION}"
 VIAddVersionKey "LegalCopyright"  "© ${COMPANY}"
 
 !include "MUI2.nsh"
+!include "WinMessages.nsh"
+!include "StrFunc.nsh"
+${StrStr}
+${StrRep}
+${UnStrStr}
+${UnStrRep}
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -99,6 +105,18 @@ Section "RDP Link" SecMain
 
   ; Windows Firewall: allow the agent on private networks.
   nsExec::ExecToLog 'netsh advfirewall firewall add rule name="RDP Link" dir=in action=allow program="$INSTDIR\office-rdp.exe" enable=yes profile=private'
+
+  ; Make rdp-link / office-rdp available in cmd.exe and PowerShell.
+  ReadRegStr $0 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
+  ${StrStr} $1 "$0" "$INSTDIR"
+  StrCmp $1 "" 0 path_done
+    StrCmp $0 "" 0 path_append
+      WriteRegExpandStr HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$INSTDIR"
+      Goto path_done
+    path_append:
+      WriteRegExpandStr HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$0;$INSTDIR"
+  path_done:
+  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
 SectionEnd
 
 Section "Uninstall"
@@ -122,6 +140,14 @@ Section "Uninstall"
 
   DeleteRegKey HKLM "${REGKEY}"
   DeleteRegKey HKLM "Software\OfficeRDP"
+
+  ; Remove the install directory from PATH.
+  ReadRegStr $0 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
+  ${UnStrRep} $1 "$0" ";$INSTDIR" ""
+  ${UnStrRep} $2 "$1" "$INSTDIR;" ""
+  ${UnStrRep} $3 "$2" "$INSTDIR" ""
+  WriteRegExpandStr HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$3"
+  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
 
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="RDP Link"'
 SectionEnd

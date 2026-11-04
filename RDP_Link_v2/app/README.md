@@ -119,7 +119,7 @@ cleared automatically and **Check Permissions…** re-verifies on demand.
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Symptom → fix matrix, diagnostics, logs |
 | [docs/SAME-SCREEN.md](docs/SAME-SCREEN.md) | Port 3390 (same screen / console) vs 3389 (new virtual session) — how to choose, configure and secure |
 | [docs/SECURITY.md](docs/SECURITY.md) | Where secrets live, how streams are protected, hardening options |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Architecture, module map, tests, release checklist |
+| [../docs/TESTING.md](../docs/TESTING.md) | Test matrix, tools, reproducible checks and release checklist |
 
 ## Profiles
 
@@ -151,6 +151,22 @@ rdp-link --version
 `--connect` accepts a peer ID, `host:port`, an `http(s)` URL, or a legacy
 profile name. Add `--password-file` (or `RDPLINK_PASSWORD`) instead of
 `--password` to keep the credential out of the process list.
+
+Put `rdp-link` on PATH on every desktop:
+
+```sh
+# macOS .pkg already installs /usr/local/bin/rdp-link; for the .dmg:
+"/Applications/RDP Link.app/Contents/MacOS/rdp-link" --install-cli
+
+# Windows (PowerShell), if the installer PATH is not present yet:
+& "C:\Program Files\RDP Link\rdp-link.exe" --install-cli
+
+# Linux tarball:
+./rdp-link --install-cli
+
+# Remove the wrappers / user-PATH entry later:
+rdp-link --uninstall-cli
+```
 
 macOS guests also get a `rdplink` alias for the same thing after
 `./build-app.sh`.

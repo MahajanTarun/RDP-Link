@@ -104,6 +104,7 @@ build_with_docker() {
   cp "$LAUNCHER_INC" "$stage/packaging/windows/optional-launcher.nsh"
   cp "$DIST/office-rdp.exe" "$DIST/office-rdp-rendezvous.exe" \
      "$DIST/README.txt" "$stage/dist/windows/"
+  cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$stage/"
   [[ -f "$DIST/rdp-link.exe" ]] && cp "$DIST/rdp-link.exe" "$stage/dist/windows/"
   docker run --rm -v "$stage:/work" debian:bookworm-slim \
     sh -c 'apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq nsis >/dev/null 2>&1 && cd /work/packaging/windows && makensis installer.nsi'

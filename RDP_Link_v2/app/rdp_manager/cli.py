@@ -482,6 +482,141 @@ def _open_viewer(base, password):
     return 1
 
 
+# -- CLI installation --------------------------------------------------------
+
+def _launcher_argv():
+    """The command that starts this launcher (frozen app or Python script)."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    script = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "ubuntu_rdp_manager.py"))
+    return [sys.executable, script]
+
+
+def _write_wrapper(path, argv):
+    import shlex
+    body = ("#!/bin/sh\n"
+            "exec " + " ".join(shlex.quote(part) for part in argv) +
+            ' "$@"\n')
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(body)
+    os.chmod(path, 0o755)
+
+
+def _cli_dirs():
+    override = os.environ.get("RDPLINK_CLI_BIN")
+    if override:
+        return [override]
+    if os.name == "nt":
+        return []
+    return ["/usr/local/bin",
+            os.path.join(os.path.expanduser("~"), ".local", "bin")]
+
+
+def _agent_paths():
+    """Wrappers for the Go tools that sit next to the launcher."""
+    here = os.path.dirname(os.path.abspath(sys.executable))
+    found = {}
+    for name in ("office-rdp", "office-rdp.exe"):
+        for base in (here, os.path.join(here, "tools")):
+            path = os.path.join(base, name)
+            if os.path.isfile(path):
+                found["office-rdp"] = path
+                break
+    rendezvous = os.path.join(here, "tools", "office-rdp-rendezvous-arm64")
+    if os.path.isfile(rendezvous):
+        found["office-rdp-rendezvous"] = rendezvous
+    return found
+
+
+def cmd_install_cli(args):
+    if os.name == "nt":
+        return _install_windows_cli(remove=False)
+    launcher = _launcher_argv()
+    agents = _agent_paths()
+    installed = []
+    for directory in _cli_dirs():
+        try:
+            os.makedirs(directory, exist_ok=True)
+            _write_wrapper(os.path.join(directory, "rdp-link"), launcher)
+            installed.append(os.path.join(directory, "rdp-link"))
+            for name, path in agents.items():
+                _write_wrapper(os.path.join(directory, name), [path])
+                installed.append(os.path.join(directory, name))
+            break
+        except OSError:
+            continue
+    if not installed:
+        print("error: cannot write a CLI wrapper (try sudo, or set "
+              "RDPLINK_CLI_BIN to a writable directory)", file=sys.stderr)
+        return 1
+    for path in installed:
+        print("installed:", path)
+    if installed[0].startswith("/usr/local/bin"):
+        print("Open a new terminal and run: rdp-link --help")
+    else:
+        print("Add this directory to PATH:", os.path.dirname(installed[0]))
+    return 0
+
+
+def _windows_user_path(install):
+    import winreg
+    target = os.path.dirname(os.path.abspath(sys.executable))
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0,
+                         winreg.KEY_READ | winreg.KEY_SET_VALUE)
+    try:
+        current, _ = winreg.QueryValueEx(key, "Path")
+    except FileNotFoundError:
+        current = ""
+    parts = [p for p in current.split(";") if p]
+    present = any(os.path.normcase(p) == os.path.normcase(target) for p in parts)
+    if install and not present:
+        parts.append(target)
+    if not install:
+        parts = [p for p in parts
+                 if os.path.normcase(p) != os.path.normcase(target)]
+    winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, ";".join(parts))
+    winreg.CloseKey(key)
+    try:
+        import ctypes
+        ctypes.windll.user32.SendMessageTimeoutW(
+            0xFFFF, 0x001A, 0, ctypes.c_wchar_p("Environment"), 0x0002, 5000,
+            None)
+    except Exception:
+        pass
+    return target
+
+
+def _install_windows_cli(remove):
+    if not getattr(sys, "frozen", False):
+        print("error: --install-cli must be run from the installed "
+              "rdp-link.exe", file=sys.stderr)
+        return 1
+    target = _windows_user_path(install=not remove)
+    action = "removed from" if remove else "added to"
+    print(f"{target} {action} the user PATH")
+    print("Open a new terminal for the change to take effect.")
+    return 0
+
+
+def cmd_uninstall_cli(args):
+    if os.name == "nt":
+        return _install_windows_cli(remove=True)
+    removed = 0
+    for directory in _cli_dirs():
+        for name in ("rdp-link", "office-rdp", "office-rdp-rendezvous"):
+            path = os.path.join(directory, name)
+            try:
+                os.unlink(path)
+                print("removed:", path)
+                removed += 1
+            except OSError:
+                pass
+    if not removed:
+        print("nothing to remove")
+    return 0
+
+
 # -- legacy profile commands -------------------------------------------------
 
 def cmd_list(args):
@@ -522,6 +657,10 @@ def build_parser():
                         help="print the version and exit")
     parser.add_argument("--id", action="store_true",
                         help="print this device's 9-digit RDP Link ID")
+    parser.add_argument("--install-cli", action="store_true",
+                        help="install the rdp-link command on PATH")
+    parser.add_argument("--uninstall-cli", action="store_true",
+                        help="remove the installed rdp-link command")
     parser.add_argument("--status", nargs="?", const="", metavar="TARGET",
                         help="show local status, or the status of TARGET")
     parser.add_argument("--share", action="store_true",
@@ -590,6 +729,10 @@ def main(argv=None):
         return 0
     if args.id:
         return cmd_id(args)
+    if args.install_cli:
+        return cmd_install_cli(args)
+    if args.uninstall_cli:
+        return cmd_uninstall_cli(args)
     if args.share:
         return cmd_share(args)
     if args.doctor:

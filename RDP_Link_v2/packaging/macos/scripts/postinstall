@@ -1,12 +1,13 @@
 #!/bin/bash
-# RDP Link installer: allow the host through the Application Firewall and
-# install the login service for the console user. Privacy permissions still
-# require the user's one-time approval (macOS rule); the Setup assistant
-# guides that after launch.
+# RDP Link installer: allow the host through the Application Firewall, install
+# the login service for the console user and publish the terminal commands.
+# Privacy permissions still require the user's one-time approval (macOS rule);
+# the Setup assistant guides that after launch.
 set -e
 
 APP="/Applications/RDP Link.app"
 AGENT="$APP/Contents/MacOS/office-rdp"
+CLI_DIR="/usr/local/bin"
 
 if [ -x "$AGENT" ]; then
   /usr/libexec/ApplicationFirewall/socketfilterfw --add "$AGENT" >/dev/null 2>&1 || true
@@ -16,6 +17,20 @@ fi
 CONSOLE_USER="$(stat -f%Su /dev/console)"
 if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ -x "$AGENT" ]; then
   sudo -u "$CONSOLE_USER" "$AGENT" --install-service >/dev/null 2>&1 || true
+fi
+
+# Terminal commands: rdp-link (host/guest/CLI), office-rdp (agent) and
+# office-rdp-rendezvous. Wrapper scripts are used instead of symlinks so the
+# bundled launchers keep resolving their own directory.
+if [ -x "$APP/Contents/MacOS/rdp-link" ]; then
+  mkdir -p "$CLI_DIR"
+  for name in rdp-link office-rdp office-rdp-rendezvous; do
+    target="$APP/Contents/MacOS/$name"
+    if [ -x "$target" ]; then
+      printf '#!/bin/sh\nexec "%s" "$@"\n' "$target" > "$CLI_DIR/$name"
+      chmod 0755 "$CLI_DIR/$name"
+    fi
+  done
 fi
 
 exit 0
