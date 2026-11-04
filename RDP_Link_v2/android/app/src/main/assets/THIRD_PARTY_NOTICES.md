@@ -53,9 +53,9 @@ Versions match `go.mod` / the Android Gradle files at the 0.2.0 release.
 | **Kotlin standard library** (Android) | via Gradle | Apache-2.0 | Android runtime |
 | **gomobile / golang.org/x/mobile** | 2026-10-11 | BSD-3-Clause | Go core bound into Android |
 | **Go runtime** | 1.26.10 | BSD-3-Clause | Runtime for every Go binary |
-| **Python** (desktop bundle) | 3.12 | PSF-2.0 | Desktop launcher and viewer |
+| **Python** (desktop bundle) | 3.12 / 3.14 | PSF-2.0 | Desktop launcher and viewer |
 | **Tcl/Tk** (desktop bundle) | 8.6 | Tcl/Tk license | Tk GUI toolkit |
-| **Pillow** (desktop bundle) | 13.0.0 | HPND | JPEG rendering in the Tk viewer |
+| **Pillow** (desktop bundle) | 12.3 / 13.0 | HPND | JPEG rendering in the Tk viewer |
 | **OpenSSL** (desktop bundle) | 3.x | Apache-2.0 | TLS for the frozen Python runtime |
 | **Bundled image/Tk libraries** | Pillow/Python wheels | BSD/MIT/zlib/FTL | libjpeg-turbo, libtiff, libwebp, libavif, OpenJPEG, lcms2, zlib, zstd, libxcb, FreeType |
 | **PyInstaller** bootloader | 6.22.3 | GPL-2.0-or-later WITH Bootloader-exception | Freezing the desktop app |
@@ -2255,7 +2255,7 @@ The Python/Tk desktop launcher and viewer are frozen with PyInstaller. The
 frozen bundle contains the Python interpreter, the Tcl/Tk GUI libraries and
 (optionally) Pillow. Their notices follow.
 
-### Python 3.12 `PSF-2.0`
+### Python 3.12 / 3.14 `PSF-2.0`
 
 Source: `LICENSE.txt`
 
@@ -3487,7 +3487,22 @@ Copyright 2003-2026 The OpenSSL Project Authors. Copyright 1998-2003 Eric A.
 Young, Tim J. Hudson. Licensed under the Apache License, Version 2.0 — the full
 text is reproduced above under `github.com/go-vgo/robotgo`.
 
-### Pillow 13.0.0 `HPND`
+### Python runtime dependencies
+
+The frozen Python runtime also carries these platform libraries. They are
+permissive and their notices are included in the Python, Pillow or Tcl/Tk
+license texts below:
+
+| Library | License | Purpose |
+| --- | --- | --- |
+| OpenSSL | Apache-2.0 | TLS (`ssl` module) |
+| libffi | MIT | `ctypes` |
+| zlib | zlib | Compression |
+| liblzma / xz | Public domain | `lzma` module |
+| SQLite | Public domain | `sqlite3` module |
+| bzip2 | BSD-like | `bz2` module |
+
+### Pillow 12.3 / 13.0 `HPND`
 
 Pillow is bundled only when installed in the build environment; the viewer uses
 it for JPEG rendering when available and falls back to PNG + Tk otherwise.
@@ -5265,6 +5280,32 @@ shipped application. Their licenses do not extend to RDP Link:
 | Docker / Ubuntu image | Apache-2.0 / various | Linux build sandbox |
 | pytest, pyflakes | MIT | Tests |
 | hdiutil, pkgbuild, codesign | Apple SDK terms | macOS packaging |
+
+NSIS is the one build tool whose code is embedded in a shipped artifact: the
+installer stub inside `RDPLink-setup.exe` is NSIS. Its zlib/libpng notice is
+reproduced here.
+
+````text
+NSIS — zlib/libpng license
+
+Copyright (C) 1999-2023 Contributors
+
+This software is provided 'as-is', without any express or implied
+warranty.  In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+````
 
 ## Appendix F — Optional runtime tools (not redistributed)
 

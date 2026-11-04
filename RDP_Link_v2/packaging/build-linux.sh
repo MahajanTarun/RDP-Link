@@ -70,6 +70,8 @@ cp "$DIST/bin/rdp-link-${native}" "$DIST/rdp-link"
 chmod +x "$DIST/bin/"* "$DIST/rdp-link"
 
 echo "==> Package tarball"
+cp "$ROOT/LICENSE" "$DIST/LICENSE"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$DIST/THIRD_PARTY_NOTICES.md"
 cd "$DIST"
-tar czf "$DIST/rdplink-linux.tar.gz" rdp-link bin
+tar czf "$DIST/rdplink-linux.tar.gz" rdp-link bin LICENSE THIRD_PARTY_NOTICES.md
 echo "Built: $DIST/rdplink-linux.tar.gz"

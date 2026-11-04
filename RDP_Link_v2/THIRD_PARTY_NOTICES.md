@@ -3487,6 +3487,21 @@ Copyright 2003-2026 The OpenSSL Project Authors. Copyright 1998-2003 Eric A.
 Young, Tim J. Hudson. Licensed under the Apache License, Version 2.0 — the full
 text is reproduced above under `github.com/go-vgo/robotgo`.
 
+### Python runtime dependencies
+
+The frozen Python runtime also carries these platform libraries. They are
+permissive and their notices are included in the Python, Pillow or Tcl/Tk
+license texts below:
+
+| Library | License | Purpose |
+| --- | --- | --- |
+| OpenSSL | Apache-2.0 | TLS (`ssl` module) |
+| libffi | MIT | `ctypes` |
+| zlib | zlib | Compression |
+| liblzma / xz | Public domain | `lzma` module |
+| SQLite | Public domain | `sqlite3` module |
+| bzip2 | BSD-like | `bz2` module |
+
 ### Pillow 12.3 / 13.0 `HPND`
 
 Pillow is bundled only when installed in the build environment; the viewer uses
@@ -5265,6 +5280,32 @@ shipped application. Their licenses do not extend to RDP Link:
 | Docker / Ubuntu image | Apache-2.0 / various | Linux build sandbox |
 | pytest, pyflakes | MIT | Tests |
 | hdiutil, pkgbuild, codesign | Apple SDK terms | macOS packaging |
+
+NSIS is the one build tool whose code is embedded in a shipped artifact: the
+installer stub inside `RDPLink-setup.exe` is NSIS. Its zlib/libpng notice is
+reproduced here.
+
+````text
+NSIS — zlib/libpng license
+
+Copyright (C) 1999-2023 Contributors
+
+This software is provided 'as-is', without any express or implied
+warranty.  In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+````
 
 ## Appendix F — Optional runtime tools (not redistributed)
 
