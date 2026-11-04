@@ -49,6 +49,10 @@ cat > "$DIST/README.txt" <<'EOF'
 RDP Link for Windows
 ======================
 
+Developed by Eminent AI Labs Pvt. Ltd. — https://www.eminentailabs.com
+Licensed under the MIT License (see LICENSE). Third-party notices are in
+THIRD_PARTY_NOTICES.md.
+
 Start the desktop app (share this screen and control other devices):
 
     rdp-link.exe

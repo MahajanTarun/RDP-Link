@@ -88,6 +88,7 @@ audit, self-host and redistribute it under the terms in [`LICENSE`](LICENSE).
 - [Troubleshooting](#troubleshooting)
 - [Known limitations](#known-limitations)
 - [FAQ](#faq)
+- [Open-source compliance](#open-source-compliance)
 - [Contributing](#contributing)
 - [License & disclaimer](#license--disclaimer)
 - [Acknowledgements](#acknowledgements)
@@ -100,8 +101,8 @@ from GitHub — download, install, connect.
 
 | Operating system | Package | How to install |
 | --- | --- | --- |
-| **macOS** (Apple silicon + Intel) | [`RDPLink-macos.dmg`](releases/RDPLink-macos.dmg) · 50 MB | Open the DMG, drag **RDP Link** into **Applications**. |
-| **macOS** (installer) | [`RDPLink-installer.pkg`](releases/RDPLink-installer.pkg) · 46 MB | Double-click; the postinstall adds the firewall rule and login service. |
+| **macOS** (Apple silicon + Intel) | [`RDPLink-macos.dmg`](releases/RDPLink-macos.dmg) · 46 MB | Open the DMG, drag **RDP Link** into **Applications**. |
+| **macOS** (installer) | [`RDPLink-installer.pkg`](releases/RDPLink-installer.pkg) · 41 MB | Double-click; the postinstall adds the firewall rule and login service. |
 | **Windows** 10/11 (x86-64) | [`RDPLink-setup.exe`](releases/RDPLink-setup.exe) · 22 MB | Run the installer. It ships the launcher, host agent and rendezvous server. |
 | **Linux** (arm64) | [`rdplink-linux-arm64.deb`](releases/rdplink-linux-arm64.deb) · 23 MB | `sudo dpkg -i rdplink-linux-arm64.deb` |
 | **Linux** (x86-64) | [`rdplink-linux-amd64.deb`](releases/rdplink-linux-amd64.deb) · 24 MB | `sudo dpkg -i rdplink-linux-amd64.deb` |
@@ -124,14 +125,16 @@ shasum -a 256 -c SHA256SUMS        # macOS / Linux
 <summary>SHA-256 checksums for 0.2.0</summary>
 
 ```text
-71b0cbab5fd5492dae558590554df298269886df085196e2c6c4601686f64d55  RDPLink-android-release.aab
-815cfe2b16450a3f2604aa0f4ce51ec4baa77985c51777547561c99a5f68f9c6  RDPLink-android-release.apk
-51f2aecd63008eff9d75591de8f0327392ccb804562ba08ad6a8115b05e73580  RDPLink-installer.pkg
-7b14b82ad459dcdd535872bab4c63335b345debe1cc96a20af215275673c678e  RDPLink-macos.dmg
-abe78ad0d0b3c5be1bd6d7045601af42f5fc244748a1afd63f5868b30e3e0e89  RDPLink-setup.exe
-a0818189518b99fa2d00b07243334c5031af9e8aa8ed1e88c3f4bf49994dee8c  rdplink-linux-amd64.deb
-de4009302850b8c21265552dd32de5a81561bb93140e4de8747116e9779e4417  rdplink-linux-arm64.deb
-6cd668b916551f63a82c176065d4537f18d8299825b509d116bcc0926de6df93  rdplink-linux.tar.gz
+4094fa36600f63acb23473b3f25b0f9893bb05e5833ff0317021bbee28317aef  LICENSE
+e3c27a30b5bec8c44f6a42df9c49b59322ea7dba7261b7edf50229be1c17ee2e  RDPLink-android-release.aab
+bb19836fc882b1db38453eca61c7ffe26c64f60130b81e5823a58b9356938c1a  RDPLink-android-release.apk
+c4d9f7257622a44785779101011a9eef8a661b5743a2b8d9acf7a74ebcaa179b  RDPLink-installer.pkg
+1f07c01be143baff225f455b15dbebed96b83fe218f19b4058d6f8a16c65f2e3  RDPLink-macos.dmg
+688ef8bfc1faa0a02bfac4b3a1fac96fe035acf63f38d9695f6b0ff26e31c79b  RDPLink-setup.exe
+be9715d60b91361514036f4d346c9fb9bc7205f098f721bf02d3552a67632b40  THIRD_PARTY_NOTICES.md
+7909a5a46db47febc956e093cc85e3d2bc04034f5368d52cee33f59a410b8c3d  rdplink-linux-amd64.deb
+62a389a2997441d5fe24b22c6e680acf484e5191e5d85335eec54b6eb725f3c3  rdplink-linux-arm64.deb
+267e9cb71ea75ef3847f648825be9390492e65115a50001bb3542fbcc81cd40c  rdplink-linux.tar.gz
 ```
 
 </details>
@@ -424,7 +427,9 @@ go build ./...
 go test ./...
 
 # Desktop launcher + viewer (Python/Tk)
-cd app && python3 -m pip install -r requirements.txt && python3 ubuntu_rdp_manager.py
+cd app && python3 -m pip install pillow && python3 ubuntu_rdp_manager.py
+# Pillow is optional (JPEG decoding); without it the viewer asks the host for PNG.
+# app/requirements.txt lists the build/test tools (PyInstaller, pytest).
 ```
 
 ### Packages
@@ -444,7 +449,8 @@ CI builds all of the above in [`.github/workflows/ci.yml`](.github/workflows/ci.
 ```sh
 bash scripts/test-all.sh        # go vet + go test + asset sync + pyflakes + pytest
 go test -race ./...             # race detector
-bash scripts/security-scan.sh   # gosec, govulncheck, shellcheck
+bash scripts/security-scan.sh   # gosec, govulncheck, shellcheck, license audit
+bash scripts/license-audit.sh   # linked Go modules must all be permissive
 ```
 
 Current state: **80 Python tests**, all Go packages pass, race detector clean,
@@ -536,6 +542,36 @@ Yes — the browser viewer supports multiple guests; input is shared. Use
 **Does it work on phones?**
 Yes. Android can host and be a guest; any phone browser can be a guest.
 
+## Open-source compliance
+
+RDP Link is MIT-licensed and ships only permissively licensed third-party code
+(**MIT, BSD-2-Clause, BSD-3-Clause and Apache-2.0**). No GPL, LGPL or AGPL code
+is linked into the shipped binaries.
+
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) records every component, its
+exact version, the license it is used under, and reproduces the full license
+texts that must accompany a binary distribution.
+
+- **Linked components** include robotgo (Apache-2.0), Pion `mediadevices` and
+  WebRTC (MIT), `gorilla/websocket` (BSD-2-Clause), `hashicorp/mdns` (MIT),
+  `kbinani/screenshot` (MIT), `jezek/xgb` (BSD-3-Clause), `golang.org/x/*`
+  (BSD-3-Clause), OpenH264 (BSD-2-Clause), NanoHTTPD (BSD-3-Clause), Kotlin
+  (Apache-2.0), Python (PSF-2.0), Tcl/Tk, Pillow (HPND) and PyInstaller
+  (GPL-2.0-or-later **with Bootloader Exception**).
+- **PyInstaller** is a build tool. Its Bootloader Exception expressly permits
+  distributing a frozen application without applying the GPL to that
+  application; RDP Link does not modify PyInstaller.
+- **Not bundled:** FFmpeg/ffplay, v4l2loopback, usbip, BlackHole/Loopback and
+  Tesseract. They are optional, user-installed programs invoked as separate
+  processes, so their licenses do not extend to RDP Link.
+- **Original assets:** the RDP Link name, logo, app icons and UI are owned by
+  Eminent AI Labs Pvt. Ltd. No third-party fonts, icon packs or UI framework
+  code (including Ant Design) are shipped.
+- **Redistribution:** keep [`LICENSE`](LICENSE) and
+  [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) with every copy. The
+  installers bundle both files, and they sit next to the downloads in
+  [`releases/`](releases/).
+
 ## Contributing
 
 Issues and pull requests are welcome.
@@ -591,10 +627,10 @@ software. Run it on networks and devices you own or are authorized to control.
 
 RDP Link builds on open-source projects including Go, Pion `mediadevices`,
 `kbinani/screenshot`, `robotgo`, `gorilla/websocket`, `golang.org/x/mobile`,
-Python/Tk, AndroidX and Kotlin. Their licenses apply to those components; see
-`go.sum`, the Android Gradle files and `app/requirements.txt`. Icons and the
-RDP Link monitor mark are part of this project and covered by the same MIT
-license.
+NanoHTTPD, Kotlin, Python/Tk and Pillow. Their licenses apply to those
+components; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the full
+list, versions, license texts and redistribution obligations. Icons and the RDP
+Link monitor mark are original project assets covered by the same MIT license.
 
 ## Acknowledgements
 
@@ -610,7 +646,7 @@ license.
     © 2026 <a href="https://www.eminentailabs.com">Eminent AI Labs Pvt. Ltd.</a> —
     RDP Link is an independent project. Microsoft, Windows and Remote Desktop
     are trademarks of Microsoft Corporation. Android is a trademark of Google LLC.
-    macOS is a trademark of Apple Inc. This project is not affiliated with or
-    endorsed by any of them.
+    macOS is a trademark of Apple Inc. Ant Design is a trademark of Ant Group.
+    This project is not affiliated with or endorsed by any of them.
   </sub>
 </p>

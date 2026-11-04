@@ -33,4 +33,7 @@ else
   echo "shellcheck not installed; skipping"
 fi
 
+echo "==> license audit"
+bash "$ROOT/scripts/license-audit.sh"
+
 echo "SECURITY SCANS PASSED"

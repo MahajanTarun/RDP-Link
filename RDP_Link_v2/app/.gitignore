@@ -8,6 +8,7 @@ __pycache__/
 build/
 dist/
 *.spec
+!RDP Link.spec
 *.app/
 *.dmg
 

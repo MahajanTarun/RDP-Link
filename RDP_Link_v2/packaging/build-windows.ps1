@@ -18,6 +18,7 @@ python -m PyInstaller --noconfirm --clean --onefile --name rdp-link `
   --add-data "receiver;receiver" `
   --exclude-module pytest --exclude-module unittest `
   --exclude-module pydoc_data --exclude-module test `
+  --exclude-module numpy `
   ubuntu_rdp_manager.py
 Pop-Location
 

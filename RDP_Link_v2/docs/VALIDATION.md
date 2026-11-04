@@ -348,8 +348,8 @@ The native arm64 package is fully validated and the code path is identical.
 
 | Artifact | Size | Notes |
 | --- | --- | --- |
-| `dist/macos/RDPLink-macos.dmg` | 50 MB | `.app` with arm64 + amd64 Go tools, Ant Design UI, ad-hoc signed (`codesign --verify --strict` passes) |
-| `dist/macos/RDPLink-installer.pkg` | 46 MB | double-click installer; postinstall adds the agent to the Application Firewall and installs the login service |
+| `dist/macos/RDPLink-macos.dmg` | 46 MB | `.app` with arm64 + amd64 Go tools, Ant Design UI, bundled LICENSE + third-party notices, ad-hoc signed (`codesign --verify --strict` passes) |
+| `dist/macos/RDPLink-installer.pkg` | 41 MB | double-click installer; postinstall adds the agent to the Application Firewall and installs the login service |
 | `dist/windows/RDPLink-setup.exe` | 22 MB | NSIS; ships `rdp-link.exe`, CGO `office-rdp.exe`, rendezvous, shortcuts, Add/Remove Programs, firewall rule |
 | `dist/windows/rdp-link.exe` | 17 MB | PyInstaller onefile launcher + bundled viewer (no Python on target) |
 | `dist/linux/rdplink-linux-arm64.deb` | 23 MB | `office-rdp`, `office-rdp-rendezvous`, `rdp-link`, docs; postinst loads the modules and the uinput rule |

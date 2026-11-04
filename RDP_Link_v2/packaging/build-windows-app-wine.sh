@@ -66,6 +66,7 @@ echo "==> Building rdp-link.exe with PyInstaller"
   --add-data "receiver;receiver" \
   --exclude-module pytest --exclude-module unittest \
   --exclude-module pydoc_data --exclude-module test \
+  --exclude-module numpy \
   ubuntu_rdp_manager.py 2>&1 | tail -3
 
 cp "dist/rdp-link.exe" "$DIST/rdp-link.exe"

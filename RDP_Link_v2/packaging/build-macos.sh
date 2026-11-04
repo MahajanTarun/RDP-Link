@@ -41,6 +41,11 @@ cp "$APP_DIR/assets/rdp-link-tcc" "$APP_DST/Contents/MacOS/tools/" 2>/dev/null |
 cp "$APP_DIR/assets/rdp-link-tcc" "$DIST/bin/" 2>/dev/null || true
 chmod +x "$APP_DST/Contents/MacOS/tools/rdp-link-tcc" 2>/dev/null || true
 
+echo "==> Bundle license and third-party notices"
+mkdir -p "$APP_DST/Contents/Resources"
+cp "$ROOT/LICENSE" "$APP_DST/Contents/Resources/LICENSE"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$APP_DST/Contents/Resources/THIRD_PARTY_NOTICES.md"
+
 echo "==> Create universal-ish launcher wrapper (arch select)"
 cat > "$APP_DST/Contents/MacOS/office-rdp" <<'SH'
 #!/bin/sh

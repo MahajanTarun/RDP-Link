@@ -19,7 +19,7 @@ build_deb() {
 Package: office-rdp
 Version: 0.2.0
 Architecture: ${arch}
-Maintainer: RDP Link <root@example.com>
+Maintainer: Eminent AI Labs Pvt. Ltd. <support@eminentailabs.com>
 Description: Cross-platform desktop sharing agent and viewer
 Depends: libc6, libx11-6, libxext6, libxrandr2, libxinerama1, libxcursor1, libxi6, libxtst6
 Recommends: ffmpeg, v4l2loopback-dkms, usbip
@@ -45,9 +45,15 @@ PPOSTINST
     install -m 0755 "$DIST/bin/rdp-link-${arch}" "$art/usr/bin/rdp-link"
   fi
   mkdir -p "$art/usr/share/doc/office-rdp"
+  install -m 0644 "$ROOT/LICENSE" "$art/usr/share/doc/office-rdp/LICENSE"
+  install -m 0644 "$ROOT/THIRD_PARTY_NOTICES.md" "$art/usr/share/doc/office-rdp/THIRD_PARTY_NOTICES.md"
   cat > "$art/usr/share/doc/office-rdp/README" <<'PREADME'
 RDP Link for Linux
 ====================
+
+Developed by Eminent AI Labs Pvt. Ltd. — https://www.eminentailabs.com
+Licensed under the MIT License; see /usr/share/doc/office-rdp/LICENSE and
+/usr/share/doc/office-rdp/THIRD_PARTY_NOTICES.md.
 
   office-rdp --host --port 8088 --password <secret>   share this desktop
   office-rdp --doctor                                 check capture/input
