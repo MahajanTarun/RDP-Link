@@ -236,11 +236,28 @@ class Viewer:
         Chip(toolbar, "Devices", self._open_devices).pack(side="right", padx=(0, 8))
         Chip(toolbar, "Audio", self._toggle_audio).pack(side="right", padx=(0, 8))
         self.zoom_var = tk.StringVar(value=self._settings.get("mode", "Fit"))
-        zoom = ttk.Combobox(toolbar, textvariable=self.zoom_var, width=7,
-                            state="readonly",
-                            values=("Fit", "Fill", "1:1", "50%", "75%", "125%", "150%"))
-        zoom.pack(side="right", padx=(0, 8))
-        zoom.bind("<<ComboboxSelected>>", lambda _e: self._on_mode_change())
+        zoom_frame = tk.Frame(toolbar, bg=SURFACE)
+        zoom_frame.pack(side="right", padx=(0, 8))
+        for label in ("Fit", "Fill", "1:1"):
+            tk.Button(zoom_frame, text=label, bg=SURFACE, fg=TEXT, relief="solid",
+                      borderwidth=1, padx=6, pady=2, cursor="hand2",
+                      command=lambda m=label: self._set_zoom_mode(m)).pack(side="left")
+        self.zoom_pct_label = tk.Label(zoom_frame, text="100%", bg=SURFACE, fg=MUTED,
+                                      font=("TkDefaultFont", 9))
+        self.zoom_pct_label.pack(side="left")
+        self.zoom_scale = ttk.Scale(zoom_frame, from_=50, to=150, orient="horizontal",
+                                    length=120,
+                                    command=lambda v: self.zoom_pct_label.configure(text=f"{int(float(v))}%"))
+        self.zoom_scale.set(100)
+        self.zoom_scale.pack(side="left", padx=(6, 4))
+        self.zoom_scale.bind("<ButtonRelease-1>", lambda _e: self._set_zoom_percent())
+        mode = self.zoom_var.get()
+        if mode.endswith("%"):
+            try:
+                self.zoom_scale.set(int(mode.rstrip("%")))
+                self.zoom_pct_label.configure(text=mode)
+            except ValueError:
+                pass
         self.display_var = tk.StringVar(value="Display")
         self.display_box = ttk.Combobox(toolbar, textvariable=self.display_var,
                                         width=12, state="readonly")
@@ -368,6 +385,24 @@ class Viewer:
             return int(mode.rstrip("%")) / 100.0
         except ValueError:
             return 1.0
+
+    def _set_zoom_mode(self, mode):
+        self.zoom_var.set(mode)
+        self._settings["mode"] = mode
+        _save_viewer_settings(self.host_url, self._settings)
+        self._render_current()
+
+    def _set_zoom_percent(self):
+        value = int(round(self.zoom_scale.get()))
+        # snap to supported steps
+        steps = (50, 75, 100, 125, 150)
+        value = min(steps, key=lambda s: abs(s - value))
+        self.zoom_scale.set(value)
+        self.zoom_pct_label.configure(text=f"{value}%")
+        self.zoom_var.set(f"{value}%")
+        self._settings["mode"] = self.zoom_var.get()
+        _save_viewer_settings(self.host_url, self._settings)
+        self._render_current()
 
     def _on_mode_change(self):
         self._settings["mode"] = self.zoom_var.get()

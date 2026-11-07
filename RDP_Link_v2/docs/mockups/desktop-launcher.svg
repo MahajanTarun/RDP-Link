@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="760" viewBox="0 0 1040 760" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
+  <rect width="1040" height="760" fill="#F5F5F5"/>
+  <!-- header -->
+  <rect width="1040" height="64" fill="#FFFFFF"/>
+  <line x1="0" y1="64" x2="1040" y2="64" stroke="#F0F0F0"/>
+  <rect x="20" y="17" width="30" height="30" rx="7" fill="#1677FF"/>
+  <text x="58" y="30" font-size="19" font-weight="700" fill="#1F1F1F">RDP Link</text>
+  <text x="58" y="50" font-size="11" fill="#595959">Remote access to your own devices</text>
+  <rect x="920" y="18" width="90" height="28" rx="6" fill="#1677FF"/>
+  <text x="965" y="37" font-size="12" fill="#FFFFFF" text-anchor="middle">+ Add device</text>
+  <!-- top-level tabs -->
+  <rect x="0" y="64" width="1040" height="40" fill="#FFFFFF"/>
+  <line x1="0" y1="104" x2="1040" y2="104" stroke="#F0F0F0"/>
+  <g font-size="13" fill="#595959">
+    <text x="30" y="89">Profiles</text>
+    <rect x="20" y="100" width="60" height="4" rx="2" fill="#1677FF"/>
+    <text x="120" y="89" fill="#1677FF" font-weight="600">RDP Link</text>
+    <text x="220" y="89">Settings</text>
+  </g>
+  <!-- RDP Link sub-tabs -->
+  <rect x="20" y="116" width="1000" height="36" rx="6" fill="#FFFFFF" stroke="#F0F0F0"/>
+  <g font-size="12" fill="#595959">
+    <rect x="28" y="122" width="70" height="24" rx="4" fill="#1677FF"/>
+    <text x="63" y="139" fill="#FFFFFF" text-anchor="middle">Share</text>
+    <rect x="104" y="122" width="80" height="24" rx="4" fill="#FFFFFF" stroke="#D9D9D9"/>
+    <text x="144" y="139" text-anchor="middle">Connect</text>
+    <rect x="190" y="122" width="80" height="24" rx="4" fill="#FFFFFF" stroke="#D9D9D9"/>
+    <text x="230" y="139" text-anchor="middle">Devices</text>
+    <rect x="276" y="122" width="90" height="24" rx="4" fill="#FFFFFF" stroke="#D9D9D9"/>
+    <text x="321" y="139" text-anchor="middle">Files</text>
+  </g>
+  <!-- two cards -->
+  <rect x="20" y="164" width="500" height="500" rx="8" fill="#FFFFFF" stroke="#F0F0F0"/>
+  <text x="40" y="192" font-size="15" font-weight="600" fill="#1F1F1F">This device</text>
+  <text x="40" y="220" font-size="12" fill="#595959">RDP Link ID</text>
+  <rect x="40" y="228" width="360" height="34" rx="6" fill="#FAFAFA" stroke="#F0F0F0"/>
+  <text x="52" y="251" font-size="20" font-weight="600" font-family="monospace" fill="#1F1F1F">123 456 789</text>
+  <rect x="410" y="232" width="60" height="26" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="440" y="249" font-size="11" fill="#1F1F1F" text-anchor="middle">Copy</text>
+  <text x="40" y="280" font-size="12" fill="#595959">LAN address</text>
+  <rect x="40" y="288" width="430" height="28" rx="6" fill="#FAFAFA" stroke="#F0F0F0"/>
+  <text x="52" y="307" font-size="12" font-family="monospace" fill="#1F1F1F">192.168.1.20:8088</text>
+  <text x="40" y="332" font-size="12" fill="#595959">Access password</text>
+  <rect x="40" y="340" width="260" height="28" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="52" y="359" font-size="12" font-family="monospace" fill="#1F1F1F">••••••</text>
+  <rect x="308" y="342" width="50" height="24" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="333" y="358" font-size="11" fill="#1F1F1F" text-anchor="middle">New</text>
+  <rect x="366" y="340" width="104" height="28" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="418" y="359" font-size="11" fill="#595959" text-anchor="middle">Advanced ▾</text>
+  <rect x="40" y="388" width="110" height="30" rx="6" fill="#1677FF"/>
+  <text x="95" y="408" font-size="12" fill="#FFFFFF" text-anchor="middle">Start sharing</text>
+  <rect x="158" y="388" width="70" height="30" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="193" y="408" font-size="12" fill="#1F1F1F" text-anchor="middle">Stop</text>
+  <rect x="40" y="432" width="430" height="22" rx="4" fill="#F6FFED" stroke="#B7EB8F"/>
+  <text x="255" y="447" font-size="11" fill="#389E0D" text-anchor="middle">Sharing this screen</text>
+
+  <rect x="520" y="164" width="500" height="500" rx="8" fill="#FFFFFF" stroke="#F0F0F0"/>
+  <text x="540" y="192" font-size="15" font-weight="600" fill="#1F1F1F">Connect to a device</text>
+  <text x="540" y="220" font-size="12" fill="#595959">Address or peer ID</text>
+  <rect x="540" y="228" width="460" height="28" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="552" y="247" font-size="12" fill="#8C8C8C">192.168.1.20:8088 or 123 456 789</text>
+  <text x="540" y="272" font-size="12" fill="#595959">Password</text>
+  <rect x="540" y="280" width="460" height="28" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <rect x="540" y="320" width="90" height="30" rx="6" fill="#1677FF"/>
+  <text x="585" y="340" font-size="12" fill="#FFFFFF" text-anchor="middle">Connect</text>
+  <text x="540" y="368" font-size="12" fill="#595959">Recent devices</text>
+  <rect x="540" y="376" width="460" height="22" rx="4" fill="#E6F4FF"/>
+  <text x="552" y="392" font-size="11" fill="#1677FF">http://192.168.1.5:8088</text>
+  <rect x="540" y="402" width="460" height="22" rx="4" fill="#FFFFFF" stroke="#F0F0F0"/>
+  <text x="552" y="418" font-size="11" fill="#1F1F1F">http://10.0.0.8:8088</text>
+  <rect x="540" y="440" width="90" height="26" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="585" y="457" font-size="11" fill="#1F1F1F" text-anchor="middle">Pairing code</text>
+  <rect x="638" y="440" width="90" height="26" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="683" y="457" font-size="11" fill="#1F1F1F" text-anchor="middle">Wake on LAN</text>
+  <rect x="736" y="440" width="90" height="26" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="781" y="457" font-size="11" fill="#1F1F1F" text-anchor="middle">Unattended</text>
+
+  <!-- footer -->
+  <rect x="0" y="700" width="1040" height="60" fill="#FFFFFF"/>
+  <line x1="0" y1="700" x2="1040" y2="700" stroke="#F0F0F0"/>
+  <text x="20" y="735" font-size="12" fill="#595959">Ready</text>
+  <rect x="820" y="712" width="90" height="28" rx="6" fill="#1677FF"/>
+  <text x="865" y="731" font-size="12" fill="#FFFFFF" text-anchor="middle">Connect</text>
+  <rect x="918" y="712" width="90" height="28" rx="6" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="963" y="731" font-size="12" fill="#1F1F1F" text-anchor="middle">Edit…</text>
+  <text x="520" y="752" font-size="11" fill="#8C8C8C" text-anchor="middle">Mockup: proposed desktop launcher with top-level + sub tabs</text>
+</svg>

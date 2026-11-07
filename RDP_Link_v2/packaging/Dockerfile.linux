@@ -7,7 +7,7 @@ WORKDIR /src
 COPY . /src
 RUN cd /src && CGO_ENABLED=1 go build -o /src/dist/office-rdp-linux ./cmd/office-rdp
 RUN cd /src && CGO_ENABLED=0 go build -o /src/dist/office-rdp-rendezvous-linux ./cmd/rendezvous
-RUN python3 -m pip install --break-system-packages pyinstaller
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pyinstaller || python3 -m pip install --break-system-packages pyinstaller
 RUN cd /src/app && python3 -m PyInstaller --noconfirm --clean --onefile \
     --name rdp-link --add-data "receiver:receiver" --add-data "office_viewer.py:." \
     --exclude-module numpy ubuntu_rdp_manager.py

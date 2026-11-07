@@ -296,9 +296,10 @@ class UbuntuRDPApp:
 
     def set_status(self, text, error=False, warn=False):
         self._status_var.set(text)
-        color = ("#e74c3c" if error
-                 else "#f39c12" if warn
-                 else "#2ecc71")
+        # Ant Design semantic tokens: success #52C41A, warning #FAAD14, error #FF4D4F.
+        color = ("#ff4d4f" if error
+                 else "#fAAD14" if warn
+                 else "#52c41a")
         self._dot_canvas.itemconfig(self._dot, fill=color)
 
     def open_setup(self):

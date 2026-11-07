@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>RDP Link — This device</title>
 <style>
-  /* Ant Design 5 light theme tokens. */
   :root {
     color-scheme: light;
     --primary: #1677ff;
@@ -32,6 +31,21 @@
     --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
             "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   }
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --bg-layout: #141414;
+    --bg-container: #1f1f1f;
+    --text: rgba(255, 255, 255, 0.88);
+    --text-secondary: rgba(255, 255, 255, 0.65);
+    --text-tertiary: rgba(255, 255, 255, 0.45);
+    --border: #424242;
+    --border-secondary: #303030;
+    --primary-bg: #111b26;
+    --success-bg: #162312;
+    --success-border: #274916;
+    --error-bg: #2a1215;
+    --error-border: #58181c;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; background: var(--bg-layout); color: var(--text);
@@ -55,9 +69,29 @@
   header .pill.off { background: var(--error-bg); color: var(--error-text);
                      border-color: var(--error-border); }
 
+  .tabs {
+    display: flex; gap: 4px; padding: 0 24px; background: var(--bg-container);
+    border-bottom: 1px solid var(--border-secondary); overflow-x: auto;
+  }
+  .tab {
+    height: 44px; padding: 0 16px; border: 0; background: transparent;
+    color: var(--text-secondary); cursor: pointer; position: relative;
+    font-size: 14px; font-family: var(--font);
+  }
+  .tab:hover { color: var(--primary-hover); }
+  .tab.active { color: var(--primary); font-weight: 600; }
+  .tab.active::after {
+    content: ''; position: absolute; left: 12px; right: 12px; bottom: 0;
+    height: 2px; background: var(--primary); border-radius: 2px;
+  }
+
   main {
-    display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
     padding: 24px; max-width: 1120px; margin: 0 auto;
+  }
+  .section { display: none; }
+  .section.active { display: block; }
+  .grid {
+    display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   }
   .card {
     background: var(--bg-container); border: 1px solid var(--border-secondary);
@@ -74,6 +108,7 @@
     border-radius: var(--radius); padding: 5px 11px; flex: 1; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; min-height: 32px; line-height: 22px;
   }
+  [data-theme="dark"] .value code { background: #262626; }
   .peer { font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: .01em;
           font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   button {
@@ -91,7 +126,7 @@
   button.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
   button.danger { color: var(--error-text); background: var(--bg-container);
                   border-color: var(--error-border); }
-  button.danger:hover { color: #fff; background: var(--error); border-color: var(--error); }
+  button.danger:hover { color: #fff; background: #ff4d4f; border-color: #ff4d4f; }
   input {
     width: 100%; height: 32px; padding: 4px 11px; border-radius: var(--radius);
     border: 1px solid var(--border); background: var(--bg-container); color: var(--text);
@@ -104,6 +139,10 @@
   .row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
   .hint { font-size: 13px; color: var(--text-secondary); margin-top: 14px;
           line-height: 1.5715; }
+  .muted { color: var(--text-tertiary); font-size: 12px; }
+  .setting-row { display: flex; align-items: center; justify-content: space-between;
+                  padding: 12px 0; border-bottom: 1px solid var(--border-secondary); }
+  .setting-row:last-child { border-bottom: 0; }
   #toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
     background: var(--bg-container); color: var(--text);
@@ -113,6 +152,10 @@
     opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20;
   }
   #toast.show { opacity: 1; }
+  @media (max-width: 760px) {
+    .tabs { padding: 0 12px; }
+    main { padding: 12px; }
+  }
 </style>
 </head>
 <body>
@@ -123,53 +166,116 @@
   <button id="openViewer">Open viewer</button>
 </header>
 
+<nav class="tabs" aria-label="Sections">
+  <button class="tab active" data-tab="share">Share</button>
+  <button class="tab" data-tab="connect">Connect</button>
+  <button class="tab" data-tab="devices">Devices</button>
+  <button class="tab" data-tab="files">Files</button>
+  <button class="tab" data-tab="settings">Settings</button>
+</nav>
+
 <main>
-  <section class="card">
-    <h2>This device</h2>
-    <div class="label">RDP Link ID</div>
-    <div class="value">
-      <span id="peerId" class="peer">—</span>
-      <button data-copy="peerId">Copy</button>
+  <section id="sec-share" class="section active">
+    <div class="grid">
+      <section class="card">
+        <h2>Share this screen (Host)</h2>
+        <div class="label">RDP Link ID</div>
+        <div class="value">
+          <span id="peerId" class="peer">—</span>
+          <button data-copy="peerId">Copy</button>
+        </div>
+        <div class="label">LAN address (same network)</div>
+        <div class="value">
+          <code id="lan">—</code>
+          <button data-copy="lan">Copy</button>
+        </div>
+        <p class="hint" style="margin-top:4px">Use this when the guest is on the same LAN/Wi-Fi.</p>
+        <div class="label">RDP Link ID / WAN address (internet or relay)</div>
+        <div class="value">
+          <code id="wan">—</code>
+          <button data-copy="wan">Copy</button>
+        </div>
+        <p class="hint" style="margin-top:4px">Share the 9-digit ID or WAN address for connections across networks.</p>
+        <div class="label">Access password</div>
+        <div class="value">
+          <code id="pw">••••••</code>
+          <button id="reveal">Show</button>
+          <button data-copy="pw">Copy</button>
+        </div>
+        <div class="row">
+          <button class="danger" id="stop">Stop sharing</button>
+        </div>
+        <p class="hint">Guests connect with the RDP Link ID through a rendezvous server, or
+          with the LAN address directly. Every request needs this password.</p>
+      </section>
+      <section class="card">
+        <h2>Status</h2>
+        <p class="hint">Sharing state, host uptime and connected guests appear here.</p>
+        <div class="row">
+          <button class="primary" id="openViewer2">Open viewer</button>
+        </div>
+      </section>
     </div>
-
-    <div class="label">LAN address</div>
-    <div class="value">
-      <code id="lan">—</code>
-      <button data-copy="lan">Copy</button>
-    </div>
-
-    <div class="label">WAN address</div>
-    <div class="value">
-      <code id="wan">—</code>
-      <button data-copy="wan">Copy</button>
-    </div>
-
-    <div class="label">Access password</div>
-    <div class="value">
-      <code id="pw">••••••</code>
-      <button id="reveal">Show</button>
-      <button data-copy="pw">Copy</button>
-    </div>
-
-    <div class="row">
-      <button class="danger" id="stop">Stop sharing</button>
-    </div>
-    <p class="hint">Guests connect with the RDP Link ID through a rendezvous server, or
-      with the LAN address directly. Every request needs this password.</p>
   </section>
 
-  <section class="card">
-    <h2>Connect to a device</h2>
-    <div class="label">Address, or 9-digit RDP Link ID</div>
-    <input id="target" placeholder="192.168.1.20:8088 or 123 456 789" />
-    <div class="label">Password</div>
-    <input id="targetPw" type="password" placeholder="Access password on the host" />
-    <div class="row">
-      <button class="primary" id="connect">Connect</button>
-      <button id="clip">Paste clipboard</button>
+  <section id="sec-connect" class="section">
+    <div class="card" style="max-width:560px">
+      <h2>Connect to a device (Guest)</h2>
+      <div class="label">Address, or 9-digit RDP Link ID</div>
+      <input id="target" placeholder="192.168.1.20:8088 or 123 456 789" />
+      <div class="label">Password</div>
+      <input id="targetPw" type="password" placeholder="Access password on the host" />
+      <div class="row">
+        <button class="primary" id="connect">Connect</button>
+        <button id="clip">Paste clipboard</button>
+      </div>
+      <p class="hint" id="connectHint">The viewer opens in a new tab and keeps the
+        password in that tab only.</p>
     </div>
-    <p class="hint" id="connectHint">The viewer opens in a new tab and keeps the
-      password in that tab only.</p>
+  </section>
+
+  <section id="sec-devices" class="section">
+    <div class="card">
+      <h2>Devices</h2>
+      <p class="hint">Audio, camera, serial, USB and port bridges are managed in the
+        viewer while you are connected to a host. Open the viewer to access them.</p>
+      <div class="row">
+        <button class="primary" id="openViewer3">Open viewer</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="sec-files" class="section">
+    <div class="card">
+      <h2>Files</h2>
+      <p class="hint">Files are exchanged through the host's shared inbox. Upload,
+        download and browse them in the viewer's Files section.</p>
+      <div class="row">
+        <button class="primary" id="openViewer4">Open viewer</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="sec-settings" class="section">
+    <div class="card" style="max-width:560px">
+      <h2>Settings</h2>
+      <div class="setting-row">
+        <div>
+          <div style="font-weight:600">Dark mode</div>
+          <div class="muted">Switch the control panel colour scheme.</div>
+        </div>
+        <button id="themeToggle">Toggle</button>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div style="font-weight:600">Setup &amp; permissions</div>
+          <div class="muted">Host-side permissions and service status.</div>
+        </div>
+        <button id="setupBtn">Open</button>
+      </div>
+      <p class="hint">Advanced host options (port, rendezvous relay) are configured
+        when starting the host agent.</p>
+    </div>
   </section>
 </main>
 
@@ -193,8 +299,6 @@
 
   const authHeaders = () => password ? { 'X-Office-Password': password } : {};
 
-  // Exchange the password for a session cookie so the pages opened from here
-  // (viewer, device panels) authenticate without a credential in the URL.
   async function startSession() {
     if (!password) return false;
     try {
@@ -207,6 +311,33 @@
       return res.ok;
     } catch (_) { return false; }
   }
+
+  // Tabs
+  document.querySelectorAll('.tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const name = btn.dataset.tab;
+      document.querySelectorAll('.section').forEach((s) => s.classList.remove('active'));
+      const sec = document.getElementById('sec-' + name);
+      if (sec) sec.classList.add('active');
+    });
+  });
+
+  // Theme
+  const THEME_KEY = 'officerdp.theme';
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+  }
+  const savedTheme = localStorage.getItem(THEME_KEY) || 'light';
+  applyTheme(savedTheme);
+  $('themeToggle').addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme') || 'light';
+    const next = cur === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    localStorage.setItem(THEME_KEY, next);
+    toast('Theme: ' + next);
+  });
 
   async function load() {
     try {
@@ -253,12 +384,14 @@
     $('reveal').textContent = shown ? 'Hide' : 'Show';
   });
 
-  $('openViewer').addEventListener('click', () => {
-    // The session cookie is scoped to this host, so the password does not
-    // need to appear in the viewer URL.
+  function openViewer() {
     const url = new URL('.', location.href).href;
     window.open(url, '_blank', 'noopener');
-  });
+  }
+  $('openViewer').addEventListener('click', openViewer);
+  if ($('openViewer2')) $('openViewer2').addEventListener('click', openViewer);
+  if ($('openViewer3')) $('openViewer3').addEventListener('click', openViewer);
+  if ($('openViewer4')) $('openViewer4').addEventListener('click', openViewer);
 
   $('connect').addEventListener('click', () => {
     let target = $('target').value.trim();
@@ -293,6 +426,8 @@
     $('state').classList.add('off');
     toast('Sharing stopped');
   });
+
+  $('setupBtn').addEventListener('click', () => toast('Host setup is configured at launch'));
 
   load();
 })();

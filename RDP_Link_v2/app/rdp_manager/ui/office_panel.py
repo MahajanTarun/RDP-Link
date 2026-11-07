@@ -180,14 +180,30 @@ class OfficePanel(ttk.Frame):
 
     # -- layout --------------------------------------------------------------
     def _build(self):
-        self.columnconfigure(0, weight=1, uniform="col")
-        self.columnconfigure(1, weight=1, uniform="col")
-        self._build_this_device()
-        self._build_remote()
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill="both", expand=True)
 
-    def _build_this_device(self):
-        card, body = self._card(self, "This device")
-        card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        share_frame = ttk.Frame(self.notebook, padding=(4, 8))
+        connect_frame = ttk.Frame(self.notebook, padding=(4, 8))
+        devices_frame = ttk.Frame(self.notebook, padding=(4, 8))
+        files_frame = ttk.Frame(self.notebook, padding=(4, 8))
+        settings_frame = ttk.Frame(self.notebook, padding=(4, 8))
+
+        self.notebook.add(share_frame, text="Share")
+        self.notebook.add(connect_frame, text="Connect")
+        self.notebook.add(devices_frame, text="Devices")
+        self.notebook.add(files_frame, text="Files")
+        self.notebook.add(settings_frame, text="Settings")
+
+        self._build_share(share_frame)
+        self._build_connect(connect_frame)
+        self._build_devices(devices_frame)
+        self._build_files(files_frame)
+        self._build_settings(settings_frame)
+
+    def _build_share(self, parent):
+        card, body = self._card(parent, "Share this screen (Host)")
+        card.pack(fill="both", expand=True)
 
         ttk.Label(body, text="RDP Link ID", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
         row = ttk.Frame(body, style="Card.TFrame")
@@ -196,14 +212,14 @@ class OfficePanel(ttk.Frame):
         ttk.Button(row, text="Copy", style="Ghost.TButton",
                    command=lambda: self._copy(self.peer_id.get(), "Peer ID")).pack(side="right")
 
-        ttk.Label(body, text="LAN", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
+        ttk.Label(body, text="LAN (same network)", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
         row = ttk.Frame(body, style="Card.TFrame")
         row.pack(fill="x")
         ttk.Label(row, textvariable=self.lan_addr, style="Card.TLabel").pack(side="left")
         ttk.Button(row, text="Copy", style="Ghost.TButton",
                    command=lambda: self._copy(self.lan_addr.get(), "LAN address")).pack(side="right")
 
-        ttk.Label(body, text="WAN", style="CardMuted.TLabel").pack(anchor="w", pady=(6, 0))
+        ttk.Label(body, text="RDP Link ID / WAN (internet or relay)", style="CardMuted.TLabel").pack(anchor="w", pady=(6, 0))
         row = ttk.Frame(body, style="Card.TFrame")
         row.pack(fill="x")
         ttk.Label(row, textvariable=self.wan_addr, style="Card.TLabel").pack(side="left")
@@ -219,16 +235,19 @@ class OfficePanel(ttk.Frame):
         ttk.Button(row, text="New", style="Ghost.TButton",
                    command=lambda: self.password.set(self._random_password())).pack(side="left", padx=(6, 0))
 
-        row = ttk.Frame(body, style="Card.TFrame")
-        row.pack(fill="x", pady=(8, 0))
+        adv_toggle = ttk.Button(body, text="Advanced settings ▾", style="Ghost.TButton",
+                                command=self._toggle_advanced)
+        adv_toggle.pack(anchor="w", pady=(8, 0))
+        self._advanced_frame = ttk.Frame(body, style="Card.TFrame")
+        row = ttk.Frame(self._advanced_frame, style="Card.TFrame")
+        row.pack(fill="x", pady=(4, 0))
         ttk.Label(row, text="Display", style="CardMuted.TLabel").pack(side="left")
         self.display_box = ttk.Combobox(row, textvariable=self.display, width=3, state="readonly")
         self.display_box.pack(side="left", padx=(6, 12))
         ttk.Label(row, text="Port", style="CardMuted.TLabel").pack(side="left")
         ttk.Entry(row, textvariable=self.port, width=7).pack(side="left", padx=(6, 0))
-
-        ttk.Label(body, text="Rendezvous (optional)", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
-        ttk.Entry(body, textvariable=self.rendezvous).pack(fill="x", pady=(2, 0))
+        ttk.Label(self._advanced_frame, text="Rendezvous (optional)", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
+        ttk.Entry(self._advanced_frame, textvariable=self.rendezvous).pack(fill="x", pady=(2, 0))
 
         row = ttk.Frame(body, style="Card.TFrame")
         row.pack(fill="x", pady=(10, 0))
@@ -243,12 +262,12 @@ class OfficePanel(ttk.Frame):
         row.pack(fill="x", pady=(8, 0))
         self.dot = tk.Canvas(row, width=10, height=10, highlightthickness=0, bg="#ffffff")
         self.dot.pack(side="left")
-        self.dot_id = self.dot.create_oval(1, 1, 9, 9, fill="#94a3b8", outline="")
+        self.dot_id = self.dot.create_oval(1, 1, 9, 9, fill="#8c8c8c", outline="")
         ttk.Label(row, textvariable=self.state_text, style="CardMuted.TLabel").pack(side="left", padx=(6, 0))
 
-    def _build_remote(self):
-        card, body = self._card(self, "Connect to a device")
-        card.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+    def _build_connect(self, parent):
+        card, body = self._card(parent, "Connect to a device (Guest)")
+        card.pack(fill="both", expand=True)
 
         ttk.Label(body, text="Address or peer ID", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
         ttk.Entry(body, textvariable=self.target).pack(fill="x", pady=(2, 0))
@@ -278,6 +297,42 @@ class OfficePanel(ttk.Frame):
                    command=self.wake_on_lan).pack(side="left", padx=(6, 0))
         ttk.Button(row, text="Unattended…", style="Ghost.TButton",
                    command=self.unattended_access).pack(side="left", padx=(6, 0))
+
+    def _build_devices(self, parent):
+        card, body = self._card(parent, "Devices")
+        card.pack(fill="both", expand=True)
+        ttk.Label(body, text="Device bridges (audio, camera, serial, USB, ports) are managed in the viewer.",
+                  style="CardMuted.TLabel", wraplength=420).pack(anchor="w", pady=(8, 0))
+        ttk.Button(body, text="Open device panel", style="Primary.TButton",
+                   command=lambda: __import__("webbrowser").open(self._viewer_base() + "/ui")).pack(anchor="w", pady=(10, 0))
+
+    def _build_files(self, parent):
+        card, body = self._card(parent, "Files")
+        card.pack(fill="both", expand=True)
+        ttk.Label(body, text="Files are exchanged through the host's shared inbox. Use the viewer to upload and download.",
+                  style="CardMuted.TLabel", wraplength=420).pack(anchor="w", pady=(8, 0))
+
+    def _build_settings(self, parent):
+        card, body = self._card(parent, "Settings")
+        card.pack(fill="both", expand=True)
+        ttk.Label(body, text="Dark mode and preferences.", style="CardMuted.TLabel").pack(anchor="w", pady=(8, 0))
+        ttk.Button(body, text="Toggle dark mode", style="Ghost.TButton",
+                   command=self._toggle_theme).pack(anchor="w", pady=(6, 0))
+
+    def _viewer_base(self):
+        return "http://127.0.0.1:" + str(self.port.get())
+
+    def _toggle_advanced(self):
+        if self._advanced_frame.winfo_ismapped():
+            self._advanced_frame.pack_forget()
+        else:
+            self._advanced_frame.pack(fill="x", pady=(4, 0))
+
+    def _toggle_theme(self):
+        current = bool(self.config_data.get("dark_mode", False))
+        self.config_data["dark_mode"] = not current
+        _save_config(self.config_data)
+        self.status_callback("Dark mode preference saved (restart to apply)")
 
     # -- identity / displays --------------------------------------------------
     def refresh_identity(self):
@@ -312,7 +367,7 @@ class OfficePanel(ttk.Frame):
             messagebox.showerror("RDP Link", "office-rdp binary not found. Build it first.")
             return
         if self.host_proc is not None and self.host_proc.poll() is None:
-            self._set_state("Already sharing", "#f59e0b")
+            self._set_state("Already sharing", "#fAAD14")
             return
         password = self.password.get().strip()
         if not password:
@@ -354,7 +409,7 @@ class OfficePanel(ttk.Frame):
             return
         self.start_btn.state(["disabled"])
         self.stop_btn.state(["!disabled"])
-        self._set_state("Starting…", "#f59e0b")
+        self._set_state("Starting…", "#fAAD14")
         threading.Thread(target=self._probe_host,
                          args=(port, password, self.host_proc),
                          daemon=True).start()
@@ -365,7 +420,7 @@ class OfficePanel(ttk.Frame):
         for _ in range(20):
             time.sleep(0.4)
             if host_proc is None or host_proc.poll() is not None:
-                self.after(0, lambda: self._set_state("Host exited", "#ef4444"))
+                self.after(0, lambda: self._set_state("Host exited", "#ff4d4f"))
                 return
             try:
                 request = urllib.request.Request(
@@ -379,12 +434,12 @@ class OfficePanel(ttk.Frame):
                 return
             except Exception:
                 continue
-        self.after(0, lambda: self._set_state("Started (no local probe)", "#f59e0b"))
+        self.after(0, lambda: self._set_state("Started (no local probe)", "#fAAD14"))
 
     def _host_ready(self, lan, wan):
         self.lan_addr.set(lan)
         self.wan_addr.set(wan)
-        self._set_state("Sharing this screen", "#22c55e")
+        self._set_state("Sharing this screen", "#52c41a")
         self.status_callback(f"RDP Link sharing on {lan}")
 
     def stop_host(self):
@@ -399,7 +454,7 @@ class OfficePanel(ttk.Frame):
         self.wan_addr.set("—")
         self.start_btn.state(["!disabled"])
         self.stop_btn.state(["disabled"])
-        self._set_state("Idle — not sharing this screen", "#94a3b8")
+        self._set_state("Idle — not sharing this screen", "#8c8c8c")
         self.status_callback("RDP Link sharing stopped")
 
     def _set_state(self, text, color):

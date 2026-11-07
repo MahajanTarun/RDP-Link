@@ -38,6 +38,23 @@
     --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
             "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   }
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --bg-layout: #141414;
+    --bg-container: #1f1f1f;
+    --text: rgba(255, 255, 255, 0.88);
+    --text-secondary: rgba(255, 255, 255, 0.65);
+    --text-tertiary: rgba(255, 255, 255, 0.45);
+    --border: #424242;
+    --border-secondary: #303030;
+    --fill-secondary: rgba(255, 255, 255, 0.08);
+    --success-bg: #162312;
+    --success-border: #274916;
+    --warning-bg: #2b2111;
+    --warning-border: #594214;
+    --error-bg: #2a1215;
+    --error-border: #58181c;
+  }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; height: 100%; background: var(--bg-layout); color: var(--text);
@@ -155,6 +172,12 @@
   #cameraImg { width: 100%; border-radius: var(--radius); border: 1px solid var(--border-secondary); }
   #cameraImg[hidden] { display: none; }
 
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .seg button { height: 28px; padding: 0 10px; font-size: 12px; border: 0; border-right: 1px solid var(--border); background: var(--bg-container); color: var(--text); cursor: pointer; }
+  .seg button:last-child { border-right: 0; }
+  .seg button.active { background: var(--primary); color: #fff; }
+  #zoomSlider { width: 120px; accent-color: var(--primary); }
+  #zoomVal { font-size: 12px; color: var(--text-secondary); }
   #toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
     background: var(--bg-container); color: var(--text); border: 1px solid var(--border-secondary);
@@ -197,15 +220,15 @@
     <div id="status">Not connected</div>
     <div class="spacer"></div>
     <select id="display" title="Host display" aria-label="Host display" hidden></select>
-    <select id="zoom" title="Screen scaling" aria-label="Screen scaling">
-      <option value="fit">Fit</option>
-      <option value="fill">Fill</option>
-      <option value="actual">1:1</option>
-      <option value="0.5">50%</option>
-      <option value="0.75">75%</option>
-      <option value="1.25">125%</option>
-      <option value="1.5">150%</option>
-    </select>
+    <div class="seg" id="zoomSeg" role="group" aria-label="Scale mode">
+    <button type="button" data-zoomseg="fit" class="active">Fit</button>
+    <button type="button" data-zoomseg="fill">Fill</button>
+    <button type="button" data-zoomseg="actual">1:1</button>
+  </div>
+  <input id="zoomSlider" type="range" min="50" max="150" step="25" value="100" title="Zoom percentage" aria-label="Zoom percentage" />
+  <span id="zoomVal" class="muted" style="min-width:42px;text-align:right">100%</span>
+    <button id="btnKeys" title="Show/hide keyboard bar">Keys</button>
+    <button id="btnSettings" title="Viewer settings">Settings</button>
     <button id="btnDevices" title="Audio, camera, serial and ports">Devices</button>
     <button id="btnClip" title="Sync clipboard with host">Clipboard</button>
     <button id="btnFull" title="Fullscreen">Fullscreen</button>
@@ -235,7 +258,15 @@
     <button class="close" id="devClose" title="Close">✕</button>
     <h2>Devices</h2>
     <p id="devHint">Enable features on the host with --audio-input, --camera-device, --serial and --forward.</p>
-
+    <nav class="devtabs" aria-label="Device sections" style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0 4px">
+      <button class="devtab active" data-devtab="audio">Audio</button>
+      <button class="devtab" data-devtab="camera">Camera</button>
+      <button class="devtab" data-devtab="serial">Serial</button>
+      <button class="devtab" data-devtab="ports">Ports</button>
+      <button class="devtab" data-devtab="usb">USB</button>
+      <button class="devtab" data-devtab="files">Files</button>
+      <button class="devtab" data-devtab="clip">Clipboard</button>
+    </nav>
     <section id="secAudio" hidden>
       <h3>Speaker (host audio)</h3>
       <div class="row">
@@ -332,6 +363,22 @@
     <button data-key="home">Home</button>
     <button data-key="end">End</button>
     <button id="btnType">Type text…</button>
+  </div>
+</div>
+<div id="settingsPop" style="position:fixed;top:64px;right:16px;width:280px;background:var(--bg-container);border:1px solid var(--border-secondary);border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.12);padding:16px;display:none;z-index:40;">
+  <h3 style="margin:0 0 12px;font-size:14px;font-weight:600">Viewer settings</h3>
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-secondary)">
+    <span style="font-size:13px">Dark mode</span>
+    <button id="themeToggleViewer" style="height:28px;padding:0 10px;font-size:12px">Toggle</button>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-secondary)">
+    <span style="font-size:13px">Quality</span>
+    <select id="qualitySel" style="height:28px;padding:0 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-container);color:var(--text)">
+      <option>Auto</option><option>High</option><option>Medium</option><option>Low</option>
+    </select>
+  </div>
+  <div style="margin-top:12px">
+    <button id="settingsClose" style="height:28px;padding:0 10px;font-size:12px">Close</button>
   </div>
 </div>
 <div id="toast"></div>
@@ -676,14 +723,49 @@
   });
 
   // -- view controls -------------------------------------------------------
-  $('zoom').addEventListener('change', (ev) => {
-    zoomMode = ev.target.value;
+  function setZoomMode(mode, announce) {
+    zoomMode = mode;
     localStorage.setItem(SCALE_KEY, zoomMode);
     applyZoom();
     const labels = { fit: 'Fit', fill: 'Fill', actual: '1:1' };
-    toast('Scale: ' + (labels[zoomMode] || Math.round(Number(zoomMode) * 100) + '%'));
+    if (announce) toast('Scale: ' + (labels[zoomMode] || Math.round(Number(zoomMode) * 100) + '%'));
+    // sync seg + slider
+    document.querySelectorAll('[data-zoomseg]').forEach((b) => {
+      b.classList.toggle('active', b.dataset.zoomseg === zoomMode);
+    });
+    const slider = $('zoomSlider');
+    const val = $('zoomVal');
+    if (slider && val) {
+      if (zoomMode === 'fit' || zoomMode === 'fill' || zoomMode === 'actual') {
+        // leave slider as last numeric
+      } else {
+        slider.value = Math.round(Number(zoomMode) * 100);
+        val.textContent = slider.value + '%';
+      }
+    }
+  }
+
+  document.querySelectorAll('[data-zoomseg]').forEach((btn) => {
+    btn.addEventListener('click', () => setZoomMode(btn.dataset.zoomseg, true));
   });
-  $('zoom').value = zoomMode;
+  const zoomSlider = $('zoomSlider');
+  if (zoomSlider) {
+    zoomSlider.addEventListener('input', (ev) => {
+      const v = Number(ev.target.value);
+      $('zoomVal').textContent = v + '%';
+    });
+    zoomSlider.addEventListener('change', (ev) => {
+      setZoomMode(String(Number(ev.target.value) / 100), true);
+    });
+  }
+  // restore
+  if (['fit','fill','actual'].includes(zoomMode)) {
+    document.querySelectorAll('[data-zoomseg]').forEach((b) => {
+      b.classList.toggle('active', b.dataset.zoomseg === zoomMode);
+    });
+  } else {
+    if (zoomSlider) { zoomSlider.value = Math.round(Number(zoomMode) * 100); $('zoomVal').textContent = zoomSlider.value + '%'; }
+  }
   window.addEventListener('resize', applyZoom);
   window.addEventListener('orientationchange', () => setTimeout(applyZoom, 150));
 
@@ -722,12 +804,31 @@
     } catch (_) { toast('Could not switch display'); }
   });
 
+  $('btnKeys').addEventListener('click', () => {
+    const k = $('keys');
+    k.style.display = (k.style.display === 'none') ? '' : 'none';
+  });
   $('btnFull').addEventListener('click', async () => {
     try {
       if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
       else await document.exitFullscreen();
     } catch (_) { toast('Fullscreen blocked'); }
   });
+
+  $('btnSettings').addEventListener('click', () => {
+    const p = $('settingsPop');
+    p.style.display = (p.style.display === 'none' || p.style.display === '') ? 'block' : 'none';
+  });
+  $('settingsClose').addEventListener('click', () => { $('settingsPop').style.display = 'none'; });
+  $('themeToggleViewer').addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme') || 'light';
+    const next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('officerdp.theme', next);
+    toast('Theme: ' + next);
+  });
+  const savedThemeViewer = localStorage.getItem('officerdp.theme') || 'light';
+  document.documentElement.setAttribute('data-theme', savedThemeViewer);
 
   $('btnDisc').addEventListener('click', () => {
     connected = false;
@@ -775,6 +876,7 @@
         links.appendChild(a);
       });
       if (caps.serial) $('serialState').textContent = 'Target: ' + caps.serial;
+      showDevTab(document.querySelector('.devtab.active')?.dataset.devtab || 'audio');
     } catch (e) {
       $('devHint').textContent = 'Device bridge unavailable: ' + e.message;
     }
@@ -786,6 +888,35 @@
     if (panel.classList.contains('open')) { loadCaps(); refreshUSB(); refreshFiles(); }
   });
   $('devClose').addEventListener('click', () => $('devices').classList.remove('open'));
+
+  // Device tabs
+  const devTabMap = {
+    audio: ['secAudio', 'secMic'],
+    camera: ['secCamera'],
+    serial: ['secSerial'],
+    ports: ['secPorts'],
+    usb: ['secUsb'],
+    files: ['secFiles'],
+    clip: ['secClipboard']
+  };
+  function showDevTab(name) {
+    Object.keys(devTabMap).forEach((k) => {
+      (devTabMap[k] || []).forEach((id) => {
+        const el = $(id);
+        if (el) el.hidden = (k !== name);
+      });
+    });
+    document.querySelectorAll('.devtab').forEach((b) => {
+      b.classList.toggle('active', b.dataset.devtab === name);
+      b.style.background = b.dataset.devtab === name ? 'var(--primary)' : 'var(--bg-container)';
+      b.style.color = b.dataset.devtab === name ? '#fff' : 'var(--text)';
+      b.style.border = '1px solid var(--border)';
+    });
+  }
+  document.querySelectorAll('.devtab').forEach((btn) => {
+    btn.addEventListener('click', () => showDevTab(btn.dataset.devtab));
+  });
+  showDevTab('audio');
 
   $('audioPlay').addEventListener('click', () => {
     if (!audioEl) audioEl = new Audio();

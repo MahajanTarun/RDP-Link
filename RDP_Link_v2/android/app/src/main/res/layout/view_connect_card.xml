@@ -10,7 +10,14 @@
         style="@style/OfficeTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Connect to a device" />
+        android:text="Connect to a device (Guest)" />
+
+    <TextView
+        style="@style/OfficeBody"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="You view and control another device's screen." />
 
     <TextView
         style="@style/OfficeLabel"

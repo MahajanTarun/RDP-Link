@@ -188,6 +188,31 @@ Windows/Wine.
 
 ---
 
+## 4.5 New workflow components (2026)
+
+The following components were added to support the tabbed/expandable workflow
+across browser, desktop and Android. They reuse the tokens in §1.
+
+- **Tabs (top)**: 40 px tab bar, blue active indicator, lazy content. Used by the
+  browser control panel (Share/Connect/Devices/Files/Settings) and the desktop
+  `ttk.Notebook` (Share/Connect/Devices/Files/Settings).
+- **Bottom navigation (Android)**: 4 items (Home/Devices/Files/Settings), icon +
+  label, active colour `primary`.
+- **Accordion / expandable card**: chevron toggle, animated height, remembers open
+  state. Used for advanced settings (port, rendezvous, permissions).
+- **Modal popup**: centered card, scrim, Esc/back to close, focus trap. Used for
+  permission setup, destructive actions, text-to-type.
+- **Bottom sheet (Android)**: slides up for device actions and "more keys".
+- **Slider**: 4 px track, 12 px thumb, snap points, value tooltip. Used for
+  viewer zoom (50–150 %) alongside a segmented control (Fit/Fill/1:1).
+- **Segmented control**: compact alternative to slider snaps.
+- **Chip**: tappable, removable. Used for recent devices and tags.
+- **Dark mode**: toggle in Settings on every surface; light default. Browser
+  applies via `data-theme`; desktop persists preference; Android persists
+  preference.
+
+Mockups: `docs/mockups/`.
+
 ## 5. Accessibility and behaviour notes
 
 - Colour is never the only signal: status tags also change text.

@@ -11,7 +11,14 @@
         style="@style/OfficeTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Share this screen" />
+        android:text="Share this screen (Host)" />
+
+    <TextView
+        style="@style/OfficeBody"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="You share your screen; others connect to you." />
 
     <TextView
         style="@style/OfficeBody"

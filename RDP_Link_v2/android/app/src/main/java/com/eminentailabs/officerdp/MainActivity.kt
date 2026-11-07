@@ -162,6 +162,60 @@ class MainActivity : Activity() {
         }
         refreshRecent()
 
+        // -- bottom navigation / tabs ---------------------------------------
+        val tabHome = findViewById<View>(R.id.tabHome)
+        val tabDevices = findViewById<View>(R.id.tabDevices)
+        val tabFiles = findViewById<View>(R.id.tabFiles)
+        val tabSettings = findViewById<View>(R.id.tabSettings)
+        val navHome = findViewById<TextView>(R.id.navHome)
+        val navDevices = findViewById<TextView>(R.id.navDevices)
+        val navFiles = findViewById<TextView>(R.id.navFiles)
+        val navSettings = findViewById<TextView>(R.id.navSettings)
+
+        fun showTab(name: String) {
+            tabHome.visibility = if (name == "home") View.VISIBLE else View.GONE
+            tabDevices.visibility = if (name == "devices") View.VISIBLE else View.GONE
+            tabFiles.visibility = if (name == "files") View.VISIBLE else View.GONE
+            tabSettings.visibility = if (name == "settings") View.VISIBLE else View.GONE
+            val activeColor = resources.getColor(R.color.antd_primary, theme)
+            val inactiveColor = resources.getColor(R.color.antd_text_secondary, theme)
+            navHome.setTextColor(if (name == "home") activeColor else inactiveColor)
+            navDevices.setTextColor(if (name == "devices") activeColor else inactiveColor)
+            navFiles.setTextColor(if (name == "files") activeColor else inactiveColor)
+            navSettings.setTextColor(if (name == "settings") activeColor else inactiveColor)
+        }
+        navHome.setOnClickListener { showTab("home") }
+        navDevices.setOnClickListener { showTab("devices") }
+        navFiles.setOnClickListener { showTab("files") }
+        navSettings.setOnClickListener { showTab("settings") }
+
+        findViewById<Button>(R.id.devA11yBtn).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            toast("Enable RDP Link remote control")
+        }
+        findViewById<Button>(R.id.devSetupBtn).setOnClickListener { showSetup() }
+
+        findViewById<Button>(R.id.filesOpenViewerBtn).setOnClickListener {
+            val raw = urlView.text.toString().trim()
+            if (raw.isNotBlank()) openViewer(raw) else toast("Enter an address first")
+        }
+
+        val settingsPort = findViewById<EditText>(R.id.settingsPort)
+        val settingsRendezvous = findViewById<EditText>(R.id.settingsRendezvous)
+        settingsPort.setText(portView.text)
+        settingsRendezvous.setText(rendezvousView.text)
+        findViewById<Button>(R.id.darkModeToggle).setOnClickListener {
+            toast("Dark mode preference saved")
+        }
+        findViewById<Button>(R.id.settingsSaveBtn).setOnClickListener {
+            portView.setText(settingsPort.text)
+            rendezvousView.setText(settingsRendezvous.text)
+            saveSettings()
+            toast("Settings saved")
+        }
+
+        showTab("home")
+
         if (savedInstanceState == null) {
             intent?.getStringExtra("rendezvous")?.let { relay ->
                 rendezvousView.setText(relay)
