@@ -17,7 +17,7 @@ cp -R "$APP" "$STAGE/Applications/"
 
 pkgbuild --root "$STAGE" \
   --identifier com.eminentailabs.rdplink \
-  --version 0.2.0 \
+  --version 0.2.1 \
   --scripts "$ROOT/packaging/macos/scripts" \
   --install-location / \
   "$PKG"

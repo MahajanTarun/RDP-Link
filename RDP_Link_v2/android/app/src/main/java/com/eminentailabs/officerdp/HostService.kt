@@ -45,7 +45,7 @@ class HostService : Service() {
         const val ACTION_STOP = "com.eminentailabs.officerdp.STOP"
         const val EXTRA_PORT = "port"
         const val DEFAULT_PORT = 8088
-        const val VERSION = "0.2.0"
+        const val VERSION = "0.2.1"
         const val SESSION_COOKIE = "rdplink_sid"
         const val SESSION_TTL_MS = 12L * 60 * 60 * 1000
         private const val AUTH_WINDOW_MS = 60_000L

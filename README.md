@@ -16,7 +16,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-22c55e.svg" /></a>
-  <img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-1677ff.svg" />
+  <img alt="Version 0.2.1" src="https://img.shields.io/badge/version-0.2.1-1677ff.svg" />
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20Android-111827.svg" />
 </p>
 
@@ -54,7 +54,7 @@ refers to the product, not to Microsoft's protocol.
 
 ## Downloads
 
-Click a link to download v0.2.0 directly. All files ship from this repository's
+Click a link to download v0.2.1 directly. All files ship from this repository's
 [`RDP_Link_v2/releases/`](RDP_Link_v2/releases/) folder, and every file has a
 checksum in [`SHA256SUMS`](RDP_Link_v2/releases/SHA256SUMS).
 

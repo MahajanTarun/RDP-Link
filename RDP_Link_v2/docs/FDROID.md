@@ -59,8 +59,8 @@
    Repo: https://github.com/<org>/office-rdp.git
 
    Builds:
-     - versionName: 0.2.0
-       versionCode: 2
+     - versionName: 0.2.1
+       versionCode: 3
        commit: <tag>
        subdir: android
        gradle:

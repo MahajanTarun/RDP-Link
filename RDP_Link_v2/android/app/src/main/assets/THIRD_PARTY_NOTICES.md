@@ -28,7 +28,7 @@ must accompany a binary distribution.
 
 ## Components linked into the shipped binaries
 
-Versions match `go.mod` / the Android Gradle files at the 0.2.0 release.
+Versions match `go.mod` / the Android Gradle files at the 0.2.1 release.
 
 | Component | Version | License | Used for |
 | --- | --- | --- | --- |

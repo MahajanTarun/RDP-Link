@@ -1,6 +1,6 @@
 # Releasing RDP Link
 
-Version is `0.2.0` in:
+Version is `0.2.1` in:
 
 - `cmd/office-rdp/main.go` (`--version`)
 - `packaging/build-linux-deb.sh` (`Version:`)

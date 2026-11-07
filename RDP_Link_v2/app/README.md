@@ -1,7 +1,7 @@
 > **Note — this is the legacy desktop launcher.** The current RDP Link
 > products (host agent, browser/Android viewers, Android host, headless CLI,
 > rendezvous/relay server) live in this repository's top level; see
-> [`../README.md`](../README.md) for the 0.2.0 release covering macOS, Linux,
+> [`../README.md`](../README.md) for the 0.2.1 release covering macOS, Linux,
 > Windows **and Android** in both host and guest roles. The document below
 > describes only the legacy FreeRDP/xrdp launcher kept in this directory.
 

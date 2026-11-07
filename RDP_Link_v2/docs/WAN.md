@@ -455,12 +455,12 @@ Pick the binary matching your VM's architecture:
 
 ```sh
 # AMD64 (E2.1.Micro)
-wget https://github.com/.../releases/download/v0.2.0/office-rdp-linux-amd64 \
+wget https://github.com/.../releases/download/v0.2.1/office-rdp-linux-amd64 \
   -O /usr/local/bin/office-rdp-rendezvous
 chmod +x /usr/local/bin/office-rdp-rendezvous
 
 # ARM64 (A1.Flex)
-wget https://github.com/.../releases/download/v0.2.0/office-rdp-linux-arm64 \
+wget https://github.com/.../releases/download/v0.2.1/office-rdp-linux-arm64 \
   -O /usr/local/bin/office-rdp-rendezvous
 chmod +x /usr/local/bin/office-rdp-rendezvous
 ```

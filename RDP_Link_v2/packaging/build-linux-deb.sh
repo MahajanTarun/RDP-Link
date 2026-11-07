@@ -17,7 +17,7 @@ build_deb() {
   mkdir -p "$art/DEBIAN" "$art/usr/bin" "$art/usr/share/applications"
   cat > "$art/DEBIAN/control" <<PCONTROL
 Package: office-rdp
-Version: 0.2.0
+Version: 0.2.1
 Architecture: ${arch}
 Maintainer: Eminent AI Labs Pvt. Ltd. <support@eminentailabs.com>
 Description: Cross-platform desktop sharing agent and viewer

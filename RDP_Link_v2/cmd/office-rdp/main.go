@@ -91,7 +91,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("office-rdp 0.2.0")
+		fmt.Println("office-rdp 0.2.1")
 		return
 	}
 

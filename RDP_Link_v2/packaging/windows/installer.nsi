@@ -10,7 +10,7 @@
 
 !define APPNAME   "RDP Link"
 !define COMPANY   "Eminent AI Labs"
-!define VERSION   "0.2.0"
+!define VERSION   "0.2.1"
 !define REGKEY    "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfficeRDP"
 !define UNINSTALLER "$INSTDIR\uninstall.exe"
 !define DIST      "../../dist/windows"
@@ -23,7 +23,7 @@ RequestExecutionLevel admin
 Unicode true
 SetCompressor /SOLID lzma
 
-VIProductVersion "0.2.0.0"
+VIProductVersion "0.2.1.0"
 VIAddVersionKey "ProductName"     "${APPNAME}"
 VIAddVersionKey "CompanyName"     "${COMPANY}"
 VIAddVersionKey "FileDescription" "RDP Link installer"

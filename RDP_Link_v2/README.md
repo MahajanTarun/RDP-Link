@@ -16,7 +16,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-22c55e.svg" /></a>
-  <img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-1677ff.svg" />
+  <img alt="Version 0.2.1" src="https://img.shields.io/badge/version-0.2.1-1677ff.svg" />
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20Android-111827.svg" />
   <img alt="Go 1.26" src="https://img.shields.io/badge/Go-1.26-00ADD8.svg" />
   <img alt="Tests" src="https://img.shields.io/badge/tests-96%20passing-brightgreen.svg" />
@@ -44,7 +44,7 @@ or a small desktop app on the guest, and no cloud account. It is **not** a
 Microsoft RDP server and does not implement the RDP wire protocol — the name
 refers to the product, not to Microsoft's protocol.
 
-> **Project status — 0.2.0.** LAN and relay flows are implemented and validated
+> **Project status — 0.2.1.** LAN and relay flows are implemented and validated
 > end to end. The remaining gaps are external: Apple Developer ID
 > notarization, Windows Authenticode, real-hardware Windows capture, macOS
 > camera/USB kernel extensions and store publishing. See
@@ -94,7 +94,7 @@ audit, self-host and redistribute it under the terms in [`LICENSE`](LICENSE).
 - [License & disclaimer](#license--disclaimer)
 - [Acknowledgements](#acknowledgements)
 
-## Downloads (v0.2.0)
+## Downloads (v0.2.1)
 
 Pick your operating system. Every file below is stored in the
 [`releases/`](releases/) folder of this repository, so the links work directly
@@ -131,7 +131,7 @@ shasum -a 256 -c SHA256SUMS        # macOS / Linux
 ```
 
 <details>
-<summary>SHA-256 checksums for 0.2.0</summary>
+<summary>SHA-256 checksums for 0.2.1</summary>
 
 ```text
 4094fa36600f63acb23473b3f25b0f9893bb05e5833ff0317021bbee28317aef  LICENSE
@@ -658,7 +658,7 @@ RDP_Link_v2/
 ├── android/               Kotlin host service, viewer, accessibility input
 ├── macos/                 TCC permission helper (Swift)
 ├── packaging/             macOS, Linux, Windows, Android build scripts
-├── releases/              downloadable 0.2.0 artifacts + SHA256SUMS
+├── releases/              downloadable 0.2.1 artifacts + SHA256SUMS
 ├── tools/relay-monitor/   lightweight VPS telemetry dashboard
 ├── docs/                  security, setup, testing, validation, ADRs
 └── scripts/               test-all, security-scan, asset sync, probes

@@ -1,6 +1,6 @@
 # Validation and working-status matrix
 
-Version 0.2.0. Last validated: 2026-11-07.
+Version 0.2.1. Last validated: 2026-11-07.
 
 Product name: **RDP Link** (binary identifiers such as `office-rdp` stay for
 compatibility). This page records what was actually exercised, not just what
@@ -262,7 +262,7 @@ $ adb shell am start -n com.eminentailabs.officerdp/.MainActivity
 $ adb forward tcp:18095 tcp:8095
 $ curl -s http://127.0.0.1:18095/info
 {"peerId":"950 270 362","alias":"Android","status":"online","port":8095,
- "version":"0.2.0","platform":"android"}
+ "version":"0.2.1","platform":"android"}
 $ curl -s -o a.jpg -w '%{http_code} %{size_download}\n' \
     -H "X-Office-Password: 768516" 'http://127.0.0.1:18095/frame.jpg'
 200 124444
@@ -329,8 +329,8 @@ sharing tag, connect form — all rendered with the Ant Design palette.
 
 ```
 $ dpkg -i rdplink-linux-arm64.deb
-$ office-rdp --version      → office-rdp 0.2.0
-$ rdp-link --version        → RDP Link 0.2.0
+$ office-rdp --version      → office-rdp 0.2.1
+$ rdp-link --version        → RDP Link 0.2.1
 $ DISPLAY=:99 office-rdp --doctor
 Displays: 1
 Capture: OK
@@ -351,7 +351,7 @@ live macOS host (`--host --test-pattern --port 18200`):
 
 ```
 $ rdp-link --help                 → full usage, tkinter not imported
-$ rdp-link --version              → RDP Link 0.2.0
+$ rdp-link --version              → RDP Link 0.2.1
 $ rdp-link --id                   → 033 976 933
 $ rdp-link --status --json        → peerId, alias, identity path, agent version
 $ rdp-link --status 127.0.0.1:18200 --password testpw
@@ -385,7 +385,7 @@ CLI installation on macOS and Windows:
 $ rdp-link --install-cli
 installed: /tmp/rdplink-cli/rdp-link
 $ /tmp/rdplink-cli/rdp-link --version
-RDP Link 0.2.0
+RDP Link 0.2.1
 
 # Windows: the NSIS installer manages the system PATH
 $ wine RDPLink-setup.exe /S

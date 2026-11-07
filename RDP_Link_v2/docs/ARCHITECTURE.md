@@ -4,7 +4,7 @@ This document explains how the complete RDP Link system works end to end:
 components, data flows, security model, and deployment topologies. Mermaid
 diagrams render on GitHub and in most Markdown viewers.
 
-- Version: 0.2.0 (see [`VALIDATION.md`](VALIDATION.md) for tested evidence)
+- Version: 0.2.1 (see [`VALIDATION.md`](VALIDATION.md) for tested evidence)
 - Protocol docs: [`HOST-AGENT.md`](HOST-AGENT.md) (HTTP API), [`WAN.md`](WAN.md)
   (relay), [`SECURITY.md`](SECURITY.md) (threat model)
 
