@@ -79,7 +79,7 @@ scp -o ConnectTimeout=8 receiver/camera-receiver.sh receiver/mic-receiver.sh \
     user@host:/tmp/
 ssh -tt -o ConnectTimeout=8 user@host "sudo -v; \
     bash /tmp/camera-receiver.sh --install; \
-    bash /tmp/mic-receiver.sh --install; rm -f /tmp/urdp-*.sh"
+    bash /tmp/mic-receiver.sh --install; rm -f /tmp/camera-receiver.sh /tmp/mic-receiver.sh"
 ```
 
 ### What `--install` does on the host

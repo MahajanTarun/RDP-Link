@@ -160,6 +160,11 @@ run_receiver() {
   check_firewall || true
   command -v pactl >/dev/null || { echo "pactl not found — run --install" >&2; exit 1; }
 
+  # Recreate the FIFO fresh each run — a stale one makes ffmpeg prompt
+  # "Overwrite? [y/N]" on stdin (there is none under systemd) and exit.
+  rm -f "$FIFO"
+  mkfifo "$FIFO"
+
   # Reload the virtual source fresh each run
   if pactl list short modules 2>/dev/null | grep -q "module-pipe-source.*$FIFO"; then
     pactl unload-module "$(pactl list short modules | grep "module-pipe-source.*$FIFO" | cut -f1)"
@@ -172,7 +177,8 @@ run_receiver() {
 
   echo "Receiving Mac microphone on udp://0.0.0.0:$DATA_PORT -> source 'MacMic'"
   echo "In Teams/Zoom on this host, select the 'MacMic' input device."
-  ffmpeg -hide_banner -loglevel error -fflags nobuffer \
+  # -y: never prompt to overwrite the FIFO; -nostdin: no prompts at all.
+  ffmpeg -nostdin -y -hide_banner -loglevel error -fflags nobuffer \
     -i "udp://0.0.0.0:$DATA_PORT" -f s16le -ac 1 -ar 48000 "$FIFO"
 }
 

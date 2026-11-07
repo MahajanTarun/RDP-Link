@@ -6,7 +6,7 @@ Design principles:
 - FreeRDP is the engine; this app is a thin, fast launcher around it
 """
 
-__version__ = "4.2.0"
+__version__ = "4.5.0"
 APP_NAME = "RDP Link"
 BUNDLE_ID = "com.eminentailabs.rdplink"
 

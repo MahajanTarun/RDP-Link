@@ -69,7 +69,7 @@ PY
 find_node() {
   for dev in /dev/video*; do
     [[ -e "$dev" ]] || continue
-    if v4l2-ctl -d "$dev" --all 2>/dev/null | grep -q "Driver name.*v4l2loopback"; then
+    if v4l2-ctl -d "$dev" --all 2>/dev/null | grep -qi "Driver name.*v4l2.*loopback"; then
       echo "$dev"; return 0
     fi
   done

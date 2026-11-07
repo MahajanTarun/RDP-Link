@@ -1,6 +1,6 @@
 # Validation and working-status matrix
 
-Version 0.2.0. Last validated: 2026-11-04.
+Version 0.2.0. Last validated: 2026-11-07.
 
 Product name: **RDP Link** (binary identifiers such as `office-rdp` stay for
 compatibility). This page records what was actually exercised, not just what

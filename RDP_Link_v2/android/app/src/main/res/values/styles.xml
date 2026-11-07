@@ -7,6 +7,7 @@
         <item name="android:statusBarColor">@color/antd_bg_container</item>
         <item name="android:navigationBarColor">@color/antd_bg_container</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:fontFamily">sans</item>
         <item name="android:textColorPrimary">@color/antd_text</item>
         <item name="android:textColorSecondary">@color/antd_text_secondary</item>
@@ -15,12 +16,16 @@
     <style name="OfficeButton" parent="@android:style/Widget.Material.Button">
         <item name="android:background">@drawable/bg_button_default</item>
         <item name="android:textColor">@color/antd_text</item>
-        <item name="android:textSize">14sp</item>
+        <item name="android:textSize">@dimen/button_text</item>
         <item name="android:textAllCaps">false</item>
-        <item name="android:minHeight">36dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:minHeight">@dimen/control_height</item>
         <item name="android:minWidth">0dp</item>
-        <item name="android:paddingLeft">15dp</item>
-        <item name="android:paddingRight">15dp</item>
+        <item name="android:paddingLeft">@dimen/button_horizontal_padding</item>
+        <item name="android:paddingRight">@dimen/button_horizontal_padding</item>
+        <item name="android:paddingTop">0dp</item>
+        <item name="android:paddingBottom">0dp</item>
         <item name="android:stateListAnimator">@null</item>
         <item name="android:elevation">0dp</item>
     </style>
@@ -39,22 +44,34 @@
         <item name="android:background">@drawable/bg_input</item>
         <item name="android:textColor">@color/antd_text</item>
         <item name="android:textColorHint">@color/antd_text_tertiary</item>
-        <item name="android:textSize">14sp</item>
-        <item name="android:minHeight">36dp</item>
-        <item name="android:paddingLeft">11dp</item>
-        <item name="android:paddingRight">11dp</item>
-        <item name="android:paddingTop">8dp</item>
-        <item name="android:paddingBottom">8dp</item>
+        <item name="android:textSize">@dimen/input_text</item>
+        <item name="android:minHeight">@dimen/control_height</item>
+        <item name="android:paddingLeft">12dp</item>
+        <item name="android:paddingRight">12dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
     </style>
 
     <style name="OfficeCard">
         <item name="android:background">@drawable/bg_card</item>
-        <item name="android:padding">20dp</item>
+        <item name="android:padding">@dimen/card_padding</item>
+    </style>
+
+    <style name="OfficeTitle">
+        <item name="android:textColor">@color/antd_text</item>
+        <item name="android:textSize">@dimen/title_text</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="OfficeBody">
+        <item name="android:textColor">@color/antd_text_secondary</item>
+        <item name="android:textSize">@dimen/body_text</item>
+        <item name="android:lineSpacingExtra">2dp</item>
     </style>
 
     <style name="OfficeLabel">
         <item name="android:textColor">@color/antd_text_secondary</item>
-        <item name="android:textSize">14sp</item>
+        <item name="android:textSize">@dimen/label_text</item>
     </style>
 
     <style name="OfficeTag">
@@ -63,7 +80,7 @@
         <item name="android:textSize">12sp</item>
         <item name="android:paddingLeft">8dp</item>
         <item name="android:paddingRight">8dp</item>
-        <item name="android:paddingTop">2dp</item>
-        <item name="android:paddingBottom">2dp</item>
+        <item name="android:paddingTop">3dp</item>
+        <item name="android:paddingBottom">3dp</item>
     </style>
 </resources>

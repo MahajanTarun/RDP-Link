@@ -2,4 +2,7 @@
 <resources>
     <string name="app_name">RDP Link</string>
     <string name="accessibility_description">Lets a guest you invited tap and type on this device. RDP Link does not read your screen through this service.</string>
+    <string name="action_share">Share</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_stop">Stop</string>
 </resources>

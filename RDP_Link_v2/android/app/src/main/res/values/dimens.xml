@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compact defaults for very small phones (< 360dp wide). -->
+    <dimen name="screen_margin">12dp</dimen>
+    <dimen name="card_padding">14dp</dimen>
+    <dimen name="section_gap">12dp</dimen>
+    <dimen name="field_gap">6dp</dimen>
+    <dimen name="label_gap">12dp</dimen>
+    <dimen name="button_gap">8dp</dimen>
+    <dimen name="header_vertical_padding">12dp</dimen>
+    <dimen name="action_bar_padding">10dp</dimen>
+    <dimen name="control_height">44dp</dimen>
+    <dimen name="button_horizontal_padding">12dp</dimen>
+    <dimen name="button_text">13sp</dimen>
+    <dimen name="input_text">14sp</dimen>
+    <dimen name="label_text">13sp</dimen>
+    <dimen name="body_text">12sp</dimen>
+    <dimen name="title_text">16sp</dimen>
+    <dimen name="header_title">18sp</dimen>
+    <dimen name="peer_id_text">22sp</dimen>
+    <dimen name="recent_list_height">120dp</dimen>
+    <dimen name="header_icon">30dp</dimen>
+</resources>

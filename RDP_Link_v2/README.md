@@ -19,7 +19,7 @@
   <img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-1677ff.svg" />
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20Android-111827.svg" />
   <img alt="Go 1.26" src="https://img.shields.io/badge/Go-1.26-00ADD8.svg" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-80%20passing-brightgreen.svg" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-96%20passing-brightgreen.svg" />
   <a href="https://www.eminentailabs.com"><img alt="Built by Eminent AI Labs" src="https://img.shields.io/badge/built%20by-Eminent%20AI%20Labs-7c3aed.svg" /></a>
 </p>
 
@@ -136,15 +136,14 @@ shasum -a 256 -c SHA256SUMS        # macOS / Linux
 ```text
 4094fa36600f63acb23473b3f25b0f9893bb05e5833ff0317021bbee28317aef  LICENSE
 2e026d69ae006fc4e1b35e89b62c9c74edc50d89cbf118b08ee0abe4b31f015f  RDPLink-android-release.aab
-ce89cf4c8bcfbec4d519a4d0cc23e430a25b6c5ee5c3d9a117380a4594628dbb  RDPLink-android-release.apk
+be3579fc484d1761dd77b098d88cc655cb038059321ca36e360239c9770da6d9  RDPLink-android-release.apk
 3cf9de56c26fb1a33ebac25db40ea8efb8ac079cf61e0df520de1743c2e5e2af  RDPLink-installer.pkg
-f1f0f7f6341e16148d5672e7cd5feec0df678861eb59b735862e36acba763282  RDPLink-macos.dmg
+8ed74c50cf44a1f562677f0a9e38634f1699e42a73ea85320e1b3137ceae6d41  RDPLink-macos.dmg
 a5d0fa6d4c4552523832dda2e933493fea1f3531f598060b9bf13651909a9ec8  RDPLink-setup.exe
 79c69073d330840bbbe6531957acf4e36b348569e1fc56ea59e3ab0e1bb627b1  THIRD_PARTY_NOTICES.md
 834dfc67f6673bf4f206d8e6ee8d6174e4c5be721959706c04e13c93b8a938fc  rdplink-linux-amd64.deb
 d1fcc1af58b265f819b39698e6d87e41473cac52161cdfe60c7af1891eceb439  rdplink-linux-arm64.deb
 ad939773fc4878e9946ca3ac90587d7cc1182fe901ab2bf4aea5d7e8c775817a  rdplink-linux.tar.gz
-```
 
 </details>
 
@@ -218,8 +217,10 @@ flowchart LR
   server; the relay proxies requests under `/t/<peer-id>/…`, so no inbound port
   is required.
 
-The design and trade-offs are documented in [`docs/adr/`](docs/adr/) and
-[`docs/WAN.md`](docs/WAN.md).
+The design and trade-offs are documented in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/adr/`](docs/adr/) and
+[`docs/WAN.md`](docs/WAN.md); development setup and contribution workflow are
+in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ## Quick start
 
@@ -270,6 +271,57 @@ office-rdp --host --port 8088 --rendezvous https://relay.example.com
 Guests then use `https://relay.example.com/t/<9-digit-id>/`. Put the relay
 behind TLS (or pass `--tls-cert` / `--tls-key`) before exposing it. See
 [`docs/WAN.md`](docs/WAN.md).
+
+The relay is lightweight (1 vCPU, ~256 MB RAM, minimal disk). The main cost
+is **bandwidth**. Free options include Oracle Cloud Always Free, Tailscale
+(personal), Cloudflare Tunnel, and other open-source tunnels — see
+`docs/WAN.md` §9–§10.
+
+### How WAN works with dynamic IPs
+
+The host never needs a public IP. It derives a stable 9-digit **peer ID** from
+its Ed25519 device key and keeps an **outbound** WebSocket tunnel open to the
+relay. Guests connect using the peer ID and the relay's stable URL; the relay
+proxies requests over that tunnel. If the host's IP changes, it reconnects
+automatically — the guest never notices. See `docs/WAN.md` §7 for the full
+flow and diagrams.
+
+### Lightweight telemetry monitor
+
+A password-protected dashboard tracks the relay server's health, services, and
+hardware resources:
+
+- **URL:** `https://monitor.130-210-56-200.sslip.io`
+- **Auth:** HTTP Basic Auth (`admin` / password set by the operator).
+- **Resource use:** ~12 MB RAM, negligible CPU.
+
+See `docs/WAN.md` §12 for details.
+
+### Public relay (provided as-is, best effort)
+
+A convenience relay is currently available at:
+
+    https://relay.130-210-56-200.sslip.io
+
+You may use it for WAN connections and testing. **This relay is operated by the
+project maintainer on a best-effort basis and is subject to change, rate
+limiting, or removal at any time without notice. No uptime, availability, or
+data-durability guarantees are provided. Use it at your own risk.** For
+production, privacy-sensitive, or high-availability use, run your own relay —
+see `docs/WAN.md` (including the Oracle Cloud deployment guide in §11).
+
+### Testing a public path with `cloudflared`
+
+For quick internet testing without a domain or TLS setup, use a Cloudflare
+quick tunnel:
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:8088
+# → https://random-words-1234.trycloudflare.com
+```
+
+This is **testing only** — the URL is temporary. For production, self-host
+`office-rdp-rendezvous` with TLS. See `docs/WAN.md` §8.
 
 ## Install per platform
 
@@ -607,6 +659,7 @@ RDP_Link_v2/
 ├── macos/                 TCC permission helper (Swift)
 ├── packaging/             macOS, Linux, Windows, Android build scripts
 ├── releases/              downloadable 0.2.0 artifacts + SHA256SUMS
+├── tools/relay-monitor/   lightweight VPS telemetry dashboard
 ├── docs/                  security, setup, testing, validation, ADRs
 └── scripts/               test-all, security-scan, asset sync, probes
 ```

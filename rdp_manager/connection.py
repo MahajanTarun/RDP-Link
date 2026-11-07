@@ -61,6 +61,17 @@ def sanitize_port(port):
     return port if port.isdigit() and 0 < int(port) < 65536 else "3389"
 
 
+def apply_scroll_direction(profile):
+    """Make FreeRDP follow the local mouse/trackpad scroll direction.
+
+    Merges UseLocalMouseScrollDirection into the user's sdl-freerdp.json
+    before launch. Detection is cached (warmed at app start), so this is a
+    tiny local file write; an unknown Auto value leaves the config alone.
+    """
+    from .scroll import apply_for_connect
+    return apply_for_connect(profile)
+
+
 def build_args(profile, stdin_pass=False, home=None, kbd_layout=None,
                freerdp_major_v=3):
     """FreeRDP flags for a profile (executable not included).
@@ -139,6 +150,9 @@ class ConnectionController:
         # Keyboard: resolve the layout (cached auto-detect or fixed value)
         from .keyboard import resolve_for_connect
         kbd = resolve_for_connect(profile)
+
+        # Mouse/trackpad: mirror the local scroll direction in the session.
+        apply_scroll_direction(profile)
 
         args = [exe] + build_args(profile, stdin_pass=use_stdin, kbd_layout=kbd,
                                   freerdp_major_v=freerdp_major(exe))

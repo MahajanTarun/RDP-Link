@@ -65,3 +65,53 @@ def discard_password_file(argv):
         os.unlink(argv[index + 1])
     except (ValueError, IndexError, OSError):
         pass
+
+
+def tk_probe_ok():
+    """Run the Tk preflight; return True when Tk can initialise."""
+    import subprocess
+    try:
+        if getattr(sys, "frozen", False):
+            argv = [sys.executable, "--viewer", "--tk-probe"]
+        else:
+            app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            script = os.path.join(app_root, "office_viewer.py")
+            argv = [sys.executable, script, "--tk-probe"]
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=10)
+        return result.returncode == 0 and "TK_OK" in (result.stdout or "")
+    except Exception:
+        return False
+
+
+def browser_viewer_url(address, password=None):
+    """Build the host viewer URL with the password in the fragment."""
+    base = address.rstrip("/")
+    if not base.startswith("http"):
+        base = "http://" + base
+    if password:
+        import urllib.parse
+        return base + "/#" + urllib.parse.urlencode({"pw": password})
+    return base + "/"
+
+
+def open_viewer(address, password=None):
+    """Open the viewer, falling back to the browser viewer when Tk is broken.
+
+    Returns (used_browser: bool, argv_or_None).
+    """
+    import subprocess
+    import webbrowser
+    if tk_probe_ok():
+        argv = viewer_argv(address, password)
+        try:
+            subprocess.Popen(argv)
+            return False, argv
+        except Exception:
+            discard_password_file(argv)
+    # Fallback: serve the same viewer page from the host.
+    url = browser_viewer_url(address, password)
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+    return True, None

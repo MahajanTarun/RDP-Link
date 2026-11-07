@@ -882,12 +882,25 @@ def main():
                         help="read the access password from a private file")
     parser.add_argument("--probe", action="store_true",
                         help="fetch one frame, print its size, then exit")
+    parser.add_argument("--tk-probe", action="store_true",
+                        help="verify that Tk can initialise; print TK_OK/TK_FAIL and exit")
     parser.add_argument("--scale", default=None,
                         help="startup scale: Fit, Fill, 1:1, or 50, 75, 125, 150")
     args = parser.parse_args()
     password = args.password
     if not password and args.password_file:
         password = read_password_file(args.password_file)
+    if getattr(args, "tk_probe", False):
+        try:
+            import tkinter as _tk
+            _r = _tk.Tk()
+            _r.withdraw()
+            _r.destroy()
+            print("TK_OK")
+            sys.exit(0)
+        except Exception as exc:
+            print(f"TK_FAIL: {exc}", file=sys.stderr)
+            sys.exit(1)
     if args.probe:
         sys.exit(probe(args.host_url, password=password))
     viewer = Viewer(args.host_url, password=password)

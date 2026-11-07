@@ -9,6 +9,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -19,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +40,9 @@ type Agent struct {
 	// It exists so the host stack can be validated in environments where GDI
 	// or X11 capture is unavailable (CI, Wine, headless runners).
 	TestPattern bool
+	// ForceLegacyCapture uses the synchronous CoreGraphics capture path on
+	// macOS instead of ScreenCaptureKit. Useful when SCK blocks.
+	ForceLegacyCapture bool
 	// Display is the monitor index being captured. It can be changed while
 	// the agent is running through POST /display.
 	Display int
@@ -62,6 +67,13 @@ type Agent struct {
 	frameSeq  uint64
 	frameHash uint64
 	vt        *mediadevices.VideoTrack
+
+	// Capture health: ScreenCaptureKit can block forever on some macOS
+	// builds, so the HTTP loop uses a watchdog and then falls back to the
+	// synchronous CoreGraphics path.
+	captureMu     sync.Mutex
+	captureLegacy bool
+	captureBusy   bool
 
 	clipMu   sync.Mutex
 	clipText string
@@ -237,18 +249,21 @@ func (a *Agent) auth(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	ip := clientIP(r, a.relaySecret)
-	if a.throttled(ip) {
-		http.Error(w, "too many attempts", http.StatusTooManyRequests)
-		return false
-	}
 	if a.Password == "" {
 		http.Error(w, "host password not configured", http.StatusForbidden)
 		return false
 	}
+	// Evaluate the credential before applying the throttle. A client that
+	// knows the password must not stay locked out because another client on
+	// the same address guessed wrong; wrong attempts still get 429.
 	if supplied := r.Header.Get("X-Office-Password"); supplied != "" {
 		if subtle.ConstantTimeCompare([]byte(supplied), []byte(a.Password)) == 1 {
 			a.clearFailures(ip)
 			return true
+		}
+		if a.throttled(ip) {
+			a.tooManyAttempts(w)
+			return false
 		}
 		a.noteFailure(ip)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -263,9 +278,20 @@ func (a *Agent) auth(w http.ResponseWriter, r *http.Request) bool {
 		a.clearFailures(ip)
 		return true
 	}
+	if a.throttled(ip) {
+		a.tooManyAttempts(w)
+		return false
+	}
 	a.noteFailure(ip)
 	http.Error(w, "unauthorized", http.StatusUnauthorized)
 	return false
+}
+
+// tooManyAttempts writes a distinct 429 so clients can tell a temporary
+// throttle from a wrong password and back off for the right amount of time.
+func (a *Agent) tooManyAttempts(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", strconv.Itoa(int(authWindow/time.Second)))
+	http.Error(w, "too many attempts", http.StatusTooManyRequests)
 }
 
 // cookieSessionToken extracts a browser session token from the cookie only.
@@ -394,10 +420,6 @@ func (a *Agent) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := clientIP(r, a.relaySecret)
-	if a.throttled(ip) {
-		http.Error(w, "too many attempts", http.StatusTooManyRequests)
-		return
-	}
 	if a.Password == "" {
 		http.Error(w, "host password not configured", http.StatusForbidden)
 		return
@@ -412,6 +434,10 @@ func (a *Agent) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if subtle.ConstantTimeCompare([]byte(supplied), []byte(a.Password)) != 1 {
+		if a.throttled(ip) {
+			a.tooManyAttempts(w)
+			return
+		}
 		a.noteFailure(ip)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -455,10 +481,6 @@ func (a *Agent) handleMediaToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := clientIP(r, a.relaySecret)
-	if a.throttled(ip) {
-		http.Error(w, "too many attempts", http.StatusTooManyRequests)
-		return
-	}
 	if a.Password == "" {
 		http.Error(w, "host password not configured", http.StatusForbidden)
 		return
@@ -470,6 +492,10 @@ func (a *Agent) handleMediaToken(w http.ResponseWriter, r *http.Request) {
 		authorized = a.validSession(token)
 	}
 	if !authorized {
+		if a.throttled(ip) {
+			a.tooManyAttempts(w)
+			return
+		}
 		a.noteFailure(ip)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -523,6 +549,7 @@ func (a *Agent) Serve() error {
 			"lanIp":  a.LANIP,
 			"wanIp":  a.WANIP,
 			"port":   a.Port,
+			"input":  input.PermissionError() == nil,
 		})
 	})
 	mux.HandleFunc("/displays", func(w http.ResponseWriter, r *http.Request) {
@@ -617,7 +644,16 @@ func (a *Agent) Serve() error {
 		var ev map[string]any
 		json.NewDecoder(http.MaxBytesReader(w, r.Body, maxInputBody)).Decode(&ev)
 		if err := input.Inject(ev); err != nil {
+			if errors.Is(err, input.ErrPermissionDenied) {
+				http.Error(w,
+					"accessibility permission required: grant RDP Link access in "+
+						"System Settings → Privacy & Security → Accessibility",
+					http.StatusForbidden)
+				return
+			}
 			fmt.Printf("input inject: %v\n", err)
+			http.Error(w, "input injection failed", http.StatusInternalServerError)
+			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})

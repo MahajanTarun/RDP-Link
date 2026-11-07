@@ -12,7 +12,7 @@ from ..logo import LOGO_PNG
 from ..connection import ConnectionController, shell_quote_cmd
 from ..deploy import copy_setup_command, deploy_receivers
 from ..profiles import ProfileStore, normalize
-from ..viewer_launch import discard_password_file, viewer_argv
+from ..viewer_launch import open_viewer
 from .dialogs import PasswordPrompt
 from .editor import ProfileEditor
 from .office_panel import OfficePanel
@@ -491,24 +491,18 @@ class UbuntuRDPApp:
             messagebox.showerror("RDP Link", str(e))
 
     def _open_office_viewer(self, addr, password=None):
-        argv = viewer_argv(addr, password)
-        try:
-            subprocess.Popen(argv)
-        except Exception as e:
-            discard_password_file(argv)
-            messagebox.showerror("RDP Link", str(e))
+        used_browser, argv = open_viewer(addr, password)
+        if argv is None and not used_browser:
+            messagebox.showerror("RDP Link", "Could not open viewer")
 
     def connect_office_host(self):
         url = simpledialog.askstring("RDP Link", "Host URL (http://ip:port):")
         if not url:
             return
         password = simpledialog.askstring("RDP Link", "Password (optional):", show="*")
-        argv = viewer_argv(url, password)
-        try:
-            subprocess.Popen(argv)
-        except Exception as e:
-            discard_password_file(argv)
-            messagebox.showerror("RDP Link", str(e))
+        used_browser, argv = open_viewer(url, password)
+        if argv is None and not used_browser:
+            messagebox.showerror("RDP Link", "Could not open viewer")
 
     def _signed_peer_list(self, rendezvous_url):
         """Ask the agent to list the peers of a rendezvous server.
@@ -574,12 +568,9 @@ class UbuntuRDPApp:
                 return
             if not addr.startswith("http"):
                 addr = "http://" + addr
-            argv = viewer_argv(addr)
-            try:
-                subprocess.Popen(argv)
-            except Exception:
-                discard_password_file(argv)
-                raise
+            used_browser, argv = open_viewer(addr)
+            if argv is None and not used_browser:
+                raise RuntimeError("Could not open viewer")
             win.destroy()
         ttk.Button(win, text="Connect", command=connect).pack()
 

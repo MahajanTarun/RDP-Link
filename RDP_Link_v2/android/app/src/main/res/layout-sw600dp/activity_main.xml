@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/antd_bg_layout"
+    android:orientation="vertical">
+
+    <!-- Layout.Header: compact single row in landscape. -->
+    <LinearLayout
+        android:id="@+id/header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/antd_bg_container"
+        android:baselineAligned="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="@dimen/screen_margin"
+        android:paddingTop="@dimen/header_vertical_padding"
+        android:paddingRight="@dimen/screen_margin"
+        android:paddingBottom="@dimen/header_vertical_padding">
+
+        <ImageView
+            android:layout_width="@dimen/header_icon"
+            android:layout_height="@dimen/header_icon"
+            android:contentDescription="@string/app_name"
+            android:src="@mipmap/ic_launcher" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textColor="@color/antd_text"
+                android:textSize="@dimen/header_title"
+                android:textStyle="bold" />
+
+            <TextView
+                style="@style/OfficeBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="Remote access to your own devices" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                style="@style/OfficeLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="RDP Link ID" />
+
+            <TextView
+                android:id="@+id/peerId"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="— — —"
+                android:textColor="@color/antd_text"
+                android:textSize="@dimen/peer_id_text"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/copyId"
+                style="@style/OfficeButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="Copy" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/antd_border_secondary" />
+
+    <ScrollView
+        android:id="@+id/scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:scrollbars="vertical">
+
+        <LinearLayout
+            android:id="@+id/scrollContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:baselineAligned="false"
+            android:gravity="top"
+            android:orientation="horizontal"
+            android:padding="@dimen/screen_margin">
+
+            <include
+                layout="@layout/view_share_card"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1" />
+
+            <include
+                layout="@layout/view_connect_card"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/section_gap"
+                android:layout_weight="1" />
+        </LinearLayout>
+    </ScrollView>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/antd_border_secondary" />
+
+    <LinearLayout
+        android:id="@+id/actionBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/antd_bg_container"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="@dimen/action_bar_padding">
+
+        <Button
+            android:id="@+id/stopHost"
+            style="@style/OfficeButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:text="@string/action_stop" />
+
+        <Button
+            android:id="@+id/startHost"
+            style="@style/OfficeButtonPrimary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/button_gap"
+            android:layout_weight="1.5"
+            android:maxLines="1"
+            android:text="@string/action_share" />
+
+        <Button
+            android:id="@+id/go"
+            style="@style/OfficeButtonPrimary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/button_gap"
+            android:layout_weight="1.5"
+            android:maxLines="1"
+            android:text="@string/action_connect" />
+    </LinearLayout>
+</LinearLayout>

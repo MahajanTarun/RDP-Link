@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from tkinter import messagebox, simpledialog, ttk
 
-from ..viewer_launch import discard_password_file, viewer_argv
+from ..viewer_launch import open_viewer
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "office-rdp")
 GUI_CONFIG = os.path.join(CONFIG_DIR, "gui.json")
@@ -482,12 +482,9 @@ class OfficePanel(ttk.Frame):
         return None
 
     def _open_viewer(self, address, password):
-        argv = viewer_argv(address, password)
-        try:
-            subprocess.Popen(argv)
-        except Exception as exc:
-            discard_password_file(argv)
-            messagebox.showerror("RDP Link", f"Could not open viewer: {exc}")
+        used_browser, argv = open_viewer(address, password)
+        if argv is None and not used_browser:
+            messagebox.showerror("RDP Link", "Could not open viewer")
             return
         self.status_callback(f"Opening viewer for {address}")
 

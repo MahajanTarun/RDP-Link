@@ -1,11 +1,20 @@
+> **Note — this is the legacy desktop launcher.** The current RDP Link
+> products (host agent, browser/Android viewers, Android host, headless CLI,
+> rendezvous/relay server) live in this repository's top level; see
+> [`../README.md`](../README.md) for the 0.2.0 release covering macOS, Linux,
+> Windows **and Android** in both host and guest roles. The document below
+> describes only the legacy FreeRDP/xrdp launcher kept in this directory.
+
 # 🔗 RDP Link
 
 **Lightweight remote access.**
 *Open source · Fast · Minimal*
 
-A thin, open-source RDP launcher for macOS and Linux with full device
-redirection — audio, microphone, camera, clipboard and file transfer — so a
-Teams/Zoom call inside a remote Ubuntu session uses your local hardware.
+This legacy launcher is a thin, open-source RDP (FreeRDP/xrdp) client for
+macOS and Linux with full device redirection — audio, microphone, camera,
+clipboard and file transfer — so a Teams/Zoom call inside a remote Ubuntu
+session uses your local hardware. For the current cross-platform product
+(macOS, Linux, Windows, Android — host and guest), see the repository root.
 
 Powered by FreeRDP. The GUI is a thin launcher with **zero runtime
 dependencies beyond Python/Tk** — connecting through RDP Link feels exactly

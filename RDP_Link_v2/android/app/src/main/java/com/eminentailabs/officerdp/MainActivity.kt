@@ -10,6 +10,7 @@ import android.content.Intent
 import android.view.accessibility.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +18,8 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -44,6 +47,12 @@ class MainActivity : Activity() {
     private lateinit var recentView: ListView
     private lateinit var advancedPanel: View
     private lateinit var advancedToggle: TextView
+    private lateinit var headerView: View
+    private lateinit var actionBarView: View
+    private lateinit var scrollContentView: View
+    private var headerBasePadding = IntArray(4)
+    private var actionBarBasePadding = IntArray(4)
+    private var scrollBasePadding = IntArray(4)
 
     private val prefs by lazy { getSharedPreferences("officerdp", Context.MODE_PRIVATE) }
 
@@ -51,7 +60,12 @@ class MainActivity : Activity() {
     private val ui = Handler(Looper.getMainLooper())
     private val statusTick = object : Runnable {
         override fun run() {
-            refreshRemoteControlStatus()
+            val running = isHostRunning()
+            if (running != sharing) {
+                sharing = running
+                if (!running) setStatus("Sharing stopped", "neutral")
+            }
+            if (!sharing) refreshRemoteControlStatus()
             ui.postDelayed(this, 2000)
         }
     }
@@ -59,6 +73,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        configureEdgeToEdge()
         projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
         peerIdView = findViewById(R.id.peerId)
@@ -70,6 +85,10 @@ class MainActivity : Activity() {
         recentView = findViewById(R.id.recentList)
         advancedPanel = findViewById(R.id.advancedPanel)
         advancedToggle = findViewById(R.id.advancedToggle)
+        headerView = findViewById(R.id.header)
+        actionBarView = findViewById(R.id.actionBar)
+        scrollContentView = findViewById(R.id.scrollContent)
+        installSystemBarInsets()
         statusView.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             toast("Enable RDP Link remote control")
@@ -79,6 +98,15 @@ class MainActivity : Activity() {
         passwordView.setText(prefs.getString("password", "") ?: "")
         portView.setText(prefs.getInt("port", HostService.DEFAULT_PORT).toString())
         rendezvousView.setText(prefs.getString("rendezvous", "") ?: "")
+        urlView.setText(savedInstanceState?.getString("url") ?: "")
+
+        // The activity is recreated on rotation so the right layout variant
+        // (portrait / landscape / tablet) is selected. Restore the panel
+        // state that is not already kept in preferences.
+        if (savedInstanceState?.getBoolean("advancedOpen", false) == true) {
+            advancedPanel.visibility = View.VISIBLE
+            advancedToggle.text = "Advanced settings ▴"
+        }
 
         findViewById<Button>(R.id.copyId).setOnClickListener {
             val cm = getSystemService(ClipboardManager::class.java)
@@ -96,6 +124,7 @@ class MainActivity : Activity() {
         }
         findViewById<Button>(R.id.stopHost).setOnClickListener {
             sharing = false
+            prefs.edit().putBoolean("sharing", false).remove("host_heartbeat").apply()
             stopService(Intent(this, HostService::class.java))
             setStatus("Sharing stopped")
             refreshRemoteControlStatus()
@@ -133,20 +162,27 @@ class MainActivity : Activity() {
         }
         refreshRecent()
 
-        intent?.getStringExtra("rendezvous")?.let { relay ->
-            rendezvousView.setText(relay)
-            saveSettings()
+        if (savedInstanceState == null) {
+            intent?.getStringExtra("rendezvous")?.let { relay ->
+                rendezvousView.setText(relay)
+                saveSettings()
+            }
+
+            // Test/deployment helper: adb ... --es seed "host1:8088,host2:8088"
+            intent?.getStringExtra("seed")?.let { seed ->
+                val items = recentItems().toMutableList()
+                seed.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { entry ->
+                    items.remove(entry)
+                    items.add(0, entry)
+                }
+                saveRecent(items)
+                refreshRecent()
+            }
         }
 
-        // Test/deployment helper: adb ... --es seed "host1:8088,host2:8088"
-        intent?.getStringExtra("seed")?.let { seed ->
-            val items = recentItems().toMutableList()
-            seed.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { entry ->
-                items.remove(entry)
-                items.add(0, entry)
-            }
-            saveRecent(items)
-            refreshRecent()
+        sharing = isHostRunning()
+        if (sharing) {
+            setStatus("Sharing started on port ${portView.text}", "success")
         }
 
         if (prefs.getString("password", "").isNullOrEmpty()) {
@@ -343,6 +379,107 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * Draw edge-to-edge, then apply the status/navigation/cutout insets to the
+     * header and action bar. This keeps the bottom buttons above the 3-button
+     * navigation bar and above the keyboard on every Android version.
+     */
+    private fun configureEdgeToEdge() {
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        }
+        window.decorView?.let { decor ->
+            @Suppress("DEPRECATION")
+            decor.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
+                    View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                )
+        }
+    }
+
+    private fun installSystemBarInsets() {
+        headerBasePadding = intArrayOf(
+            headerView.paddingLeft, headerView.paddingTop,
+            headerView.paddingRight, headerView.paddingBottom
+        )
+        actionBarBasePadding = intArrayOf(
+            actionBarView.paddingLeft, actionBarView.paddingTop,
+            actionBarView.paddingRight, actionBarView.paddingBottom
+        )
+        scrollBasePadding = intArrayOf(
+            scrollContentView.paddingLeft, scrollContentView.paddingTop,
+            scrollContentView.paddingRight, scrollContentView.paddingBottom
+        )
+        val root = findViewById<View>(R.id.root)
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val left: Int
+            val top: Int
+            val right: Int
+            val bottom: Int
+            val imeBottom: Int
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val bars = insets.getInsets(
+                    WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
+                )
+                left = bars.left
+                top = bars.top
+                right = bars.right
+                bottom = bars.bottom
+                imeBottom = insets.getInsets(WindowInsets.Type.ime()).bottom
+            } else {
+                @Suppress("DEPRECATION")
+                left = insets.systemWindowInsetLeft
+                @Suppress("DEPRECATION")
+                top = insets.systemWindowInsetTop
+                @Suppress("DEPRECATION")
+                right = insets.systemWindowInsetRight
+                @Suppress("DEPRECATION")
+                bottom = insets.systemWindowInsetBottom
+                imeBottom = 0
+            }
+            headerView.setPadding(
+                headerBasePadding[0] + left,
+                headerBasePadding[1] + top,
+                headerBasePadding[2] + right,
+                headerBasePadding[3]
+            )
+            actionBarView.setPadding(
+                actionBarBasePadding[0] + left,
+                actionBarBasePadding[1],
+                actionBarBasePadding[2] + right,
+                actionBarBasePadding[3] + maxOf(bottom, imeBottom)
+            )
+            scrollContentView.setPadding(
+                scrollBasePadding[0] + left,
+                scrollBasePadding[1],
+                scrollBasePadding[2] + right,
+                scrollBasePadding[3]
+            )
+            insets
+        }
+        root.requestApplyInsets()
+    }
+
+    /** A host service writes a heartbeat every few seconds; a stale value
+     *  means the service was killed, so the UI must not pretend it is live. */
+    private fun isHostRunning(): Boolean {
+        if (!prefs.getBoolean("sharing", false)) return false
+        val heartbeat = prefs.getLong("host_heartbeat", 0L)
+        return heartbeat > 0L &&
+            System.currentTimeMillis() - heartbeat < 20_000L
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString("url", urlView.text.toString())
+        outState.putBoolean("advancedOpen", advancedPanel.visibility == View.VISIBLE)
+    }
+
     override fun onPause() {
         ui.removeCallbacks(statusTick)
         saveSettings()
@@ -351,7 +488,12 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        refreshRemoteControlStatus()
+        sharing = isHostRunning()
+        if (sharing) {
+            setStatus("Sharing started on port ${portView.text}", "success")
+        } else {
+            refreshRemoteControlStatus()
+        }
         // The accessibility service can bind a moment after the activity
         // resumes; keep the tag in sync while the screen is visible.
         ui.removeCallbacks(statusTick)
@@ -372,11 +514,12 @@ class MainActivity : Activity() {
 
     private fun refreshRemoteControlStatus() {
         if (sharing) return  // keep the sharing message visible
-        val a11y = InputAccessibilityService.instance != null || accessibilityServiceEnabled()
-        if (a11y) {
-            setStatus("Remote control enabled", "success")
-        } else {
-            setStatus("Remote control disabled — taps will not be injected", "error")
+        val bound = InputAccessibilityService.instance != null
+        val enabled = accessibilityServiceEnabled()
+        when {
+            bound -> setStatus("Remote control enabled", "success")
+            enabled -> setStatus("Remote control enabled — waiting for Android to bind", "neutral")
+            else -> setStatus("Remote control disabled — taps will not be injected", "error")
         }
     }
 
@@ -417,8 +560,14 @@ class MainActivity : Activity() {
                 startService(intent)
             }
             sharing = true
+            prefs.edit()
+                .putBoolean("sharing", true)
+                .putLong("host_heartbeat", System.currentTimeMillis())
+                .apply()
             setStatus("Sharing started on port ${portView.text}", "success")
         } else if (requestCode == REQUEST_CODE) {
+            sharing = false
+            prefs.edit().putBoolean("sharing", false).remove("host_heartbeat").apply()
             setStatus("Screen capture permission denied", "error")
         }
     }

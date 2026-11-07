@@ -22,6 +22,7 @@ import (
 
 	"github.com/eminentailabs/office-rdp/core/host"
 	"github.com/eminentailabs/office-rdp/core/identity"
+	"github.com/eminentailabs/office-rdp/core/input"
 	"github.com/eminentailabs/office-rdp/core/mdns"
 	"github.com/eminentailabs/office-rdp/core/pairing"
 	"github.com/eminentailabs/office-rdp/core/peerauth"
@@ -86,6 +87,7 @@ func main() {
 	virtualCamera := flag.String("virtual-camera", "", "v4l2loopback device fed by guest camera frames (Linux)")
 	enableUSBIP := flag.Bool("usbip", false, "enable USB/IP export controls (Linux)")
 	testPattern := flag.Bool("test-pattern", false, "stream a synthetic test pattern instead of the screen")
+	captureLegacy := flag.Bool("capture-legacy", false, "use the CoreGraphics capture path on macOS (workaround for ScreenCaptureKit stalls)")
 	flag.Parse()
 
 	if *version {
@@ -163,6 +165,7 @@ func main() {
 		ag := host.New(id.Formatted(), id.Alias, pw, *port)
 		ag.ReadOnly = *readOnly
 		ag.TestPattern = *testPattern
+		ag.ForceLegacyCapture = *captureLegacy
 		ag.AudioInput = *audioInput
 		ag.CameraDevice = *cameraDevice
 		ag.SerialPath = *serialPath
@@ -380,6 +383,12 @@ func main() {
 			for _, t := range stream.GetVideoTracks() {
 				t.Close()
 			}
+		}
+		if err := input.PermissionError(); err != nil {
+			fmt.Println("Input: FAIL -", err,
+				"(System Settings → Privacy & Security → Accessibility)")
+		} else {
+			fmt.Println("Input: OK")
 		}
 		ln, err := net.Listen("tcp", ":8088") // #nosec G102 -- local port probe
 		if err != nil {

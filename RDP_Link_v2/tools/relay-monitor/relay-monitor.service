@@ -1,0 +1,13 @@
+[Unit]
+Description=RDP Link relay monitor (lightweight)
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+ExecStart=/usr/bin/python3 /opt/relay-monitor/monitor.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

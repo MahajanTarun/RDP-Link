@@ -62,6 +62,18 @@ still mismatches:
 - ⌘ Cmd maps to the remote *Super* key — GNOME-specific quirks (like
   Cmd+Space not opening remote Spotlight) are expected, not bugs.
 
+### Scroll direction is backwards in the session
+(default behaviour follows the mouse/trackpad in use). FreeRDP gets
+`UseLocalMouseScrollDirection` from its SDL user config
+(`~/.config/freerdp/sdl-freerdp.json`) before launch. If it still feels
+inverted:
+- set the profile's **Mouse & trackpad** to *Natural* or *Traditional*
+  instead of Auto-detect;
+- check that macOS **System Settings → Trackpad → Scroll direction** (or
+  the mouse equivalent) matches what you expect locally;
+- the setting is re-applied on every connect, so changing it locally then
+  reconnecting is enough — no app restart needed.
+
 ### Saved password doesn't connect
 Toggle **stdin pass** handling per profile by editing the profile: v4 pipes
 the password via `/from-stdin`. If a particular FreeRDP build ignores it,

@@ -3,6 +3,7 @@ package com.eminentailabs.officerdp
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ClipboardManager
+import android.content.Intent
 import android.graphics.Path
 import android.graphics.PointF
 import android.os.Bundle
@@ -24,10 +25,27 @@ class InputAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        // Record the bind so the host UI can distinguish "enabled but the
+        // system has not re-bound it yet" from "not enabled at all".
+        getSharedPreferences("officerdp", MODE_PRIVATE).edit()
+            .putBoolean("a11y_bound", true)
+            .putLong("a11y_bound_at", System.currentTimeMillis())
+            .apply()
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        if (instance === this) instance = null
+        getSharedPreferences("officerdp", MODE_PRIVATE).edit()
+            .putBoolean("a11y_bound", false)
+            .apply()
+        return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        getSharedPreferences("officerdp", MODE_PRIVATE).edit()
+            .putBoolean("a11y_bound", false)
+            .apply()
         super.onDestroy()
     }
 

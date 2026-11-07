@@ -5,7 +5,9 @@ a visible terminal window so the user can answer sudo prompts; after that
 the receivers run as systemd services and no setup is ever needed again.
 """
 
+import os
 import subprocess
+import tempfile
 
 from .paths import receiver_script, IS_MAC
 
@@ -23,9 +25,9 @@ def setup_command(host, username=None, ssh_port=None):
     port_flag = f"-p {ssh_port} " if ssh_port else ""
     scripts = (f'"{receiver_script(CAMERA_SCRIPT)}" '
                f'"{receiver_script(MIC_SCRIPT)}"')
-    remote = ("sudo -v; bash /tmp/urdp-camera-receiver.sh --install; "
-              "bash /tmp/urdp-mic-receiver.sh --install; "
-              "rm -f /tmp/urdp-camera-receiver.sh /tmp/urdp-mic-receiver.sh")
+    remote = ("sudo -v; bash /tmp/camera-receiver.sh --install; "
+              "bash /tmp/mic-receiver.sh --install; "
+              "rm -f /tmp/camera-receiver.sh /tmp/mic-receiver.sh")
     return (f"scp -o ConnectTimeout=8 {port_flag}{scripts} "
             f"{user_at}:/tmp/ && "
             f"ssh -tt -o ConnectTimeout=8 {port_flag}{user_at} \"{remote}\"")
@@ -34,22 +36,30 @@ def setup_command(host, username=None, ssh_port=None):
 def open_terminal(cmd):
     """Run `cmd` in a visible terminal window; returns True when launched."""
     try:
+        # Write the (possibly quote-heavy) command to a temp script so the
+        # terminal launcher never has to parse embedded quotes/semicolons.
+        script_path = os.path.join(tempfile.gettempdir(),
+                                   "rdp-link-host-setup.sh")
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\n" + cmd + "\n")
+        os.chmod(script_path, 0o755)
+        launch = f"bash {script_path}"
         if IS_MAC:
             subprocess.run(
                 ["osascript", "-e",
-                 f'tell application "Terminal"\n'
-                 f'do script "{cmd}"\nactivate\nend tell'],
+                 'tell application "Terminal"\n'
+                 f'do script "{launch}"\n'
+                 'activate\nend tell'],
                 check=True, capture_output=True, timeout=10)
             return True
         for term, style in (("gnome-terminal", ["--"]),
                             ("konsole", ["-e"]),
                             ("x-terminal-emulator", ["-e"]),
                             ("xterm", ["-e"])):
-            exe = None
             from shutil import which
             exe = which(term)
             if exe:
-                subprocess.Popen([exe] + style + [cmd],
+                subprocess.Popen([exe] + style + [launch],
                                  stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL)
                 return True

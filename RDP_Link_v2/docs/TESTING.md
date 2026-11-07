@@ -4,7 +4,7 @@ This document explains **how** RDP Link is tested, which devices and tools
 were used, and what evidence each claim in [`VALIDATION.md`](VALIDATION.md)
 rests on. It is written so the whole pass can be repeated by someone else.
 
-Last full pass: 2026-11-03 (version 0.2.0).
+Last full pass: 2026-11-07 (version 0.2.0).
 
 ---
 

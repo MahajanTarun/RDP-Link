@@ -468,17 +468,12 @@ def _input(args, base, password, event, path="/input", body=None):
 def _open_viewer(base, password):
     """Launch the GUI viewer when the user explicitly asks for it."""
     try:
-        from .viewer_launch import viewer_argv
+        from .viewer_launch import open_viewer
     except Exception as exc:  # pragma: no cover - packaging issue
         print(f"error: viewer unavailable: {exc}", file=sys.stderr)
         return -1
-    argv = viewer_argv(base, password or None)
-    try:
-        subprocess.Popen(argv)
-    except OSError as exc:
-        print(f"error: cannot open viewer: {exc}", file=sys.stderr)
-        return -1
-    print("viewer: launched")
+    used_browser, argv = open_viewer(base, password or None)
+    print("viewer: launched" + (" (browser fallback)" if used_browser else ""))
     return 1
 
 

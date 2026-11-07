@@ -32,7 +32,11 @@ DEFAULTS = {
     "stdinPass": True,
     "certTofu": True,
     "keyboard": "auto",
+    "mouseScroll": "auto",
+    "scroll": "auto",
 }
+
+SCROLL_CHOICES = ("auto", "natural", "traditional")
 
 
 def default_profiles():
@@ -53,12 +57,15 @@ def default_profiles():
         "stdinPass": True,
         "certTofu": True,
         "keyboard": "auto",
+        "mouseScroll": "auto",
+        "scroll": "auto",
     }]
 
 
 def normalize(p):
     """Validate one profile dict; migrate legacy keys; fill defaults."""
     p = dict(p)
+    had_mouse_scroll = "mouseScroll" in p
     # migrate legacy boolean device flags (v1/v2) into route strings
     if "audio" not in p:
         p["audio"] = "host" if p.get("audioOut", True) else "remote"
@@ -73,6 +80,22 @@ def normalize(p):
     if not (p["keyboard"] == "auto"
             or re.fullmatch(r"0x[0-9A-Fa-f]+", str(p["keyboard"]))):
         p["keyboard"] = "auto"
+
+    # Mouse/trackpad scroll direction. `scroll` is an older alias; keep both
+    # keys in sync so hand-written profiles continue to work.
+    if not had_mouse_scroll and p.get("scroll") in SCROLL_CHOICES:
+        p["mouseScroll"] = p["scroll"]
+    raw_scroll = str(p.get("mouseScroll", "auto")).strip().lower()
+    if raw_scroll in ("natural", "true", "yes", "on", "1", "local"):
+        scroll = "natural"
+    elif raw_scroll in ("traditional", "normal", "false", "no", "off", "0",
+                        "inverted", "reverse"):
+        scroll = "traditional"
+    else:
+        scroll = "auto"
+    p["mouseScroll"] = scroll
+    p["scroll"] = scroll
+
     for key, allowed in ROUTES.items():
         if p[key] in allowed:
             continue

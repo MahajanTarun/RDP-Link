@@ -37,14 +37,14 @@ class ProfileEditor(tk.Toplevel):
         self._save_pw_var = tk.BooleanVar(value=profile.get("savePassword", False))
         self._camtest_var = tk.StringVar(value="")
 
-        outer = ttk.Frame(self, padding=20)
+        outer = ttk.Frame(self, padding=(16, 8))
         outer.pack(fill="both", expand=True)
 
         ttk.Label(outer, text=self.title(),
-                  font=("TkDefaultFont", 16, "bold")).pack(anchor="w", pady=(0, 14))
+                  font=("TkDefaultFont", 16, "bold")).pack(anchor="w", pady=(0, 4))
 
         # ---- Connection ------------------------------------------------
-        conn = ttk.LabelFrame(outer, text=" Connection ", padding=12)
+        conn = ttk.LabelFrame(outer, text=" Connection ", padding=8)
         conn.pack(fill="x")
         for i in range(2):
             conn.columnconfigure(i, weight=1)
@@ -67,8 +67,8 @@ class ProfileEditor(tk.Toplevel):
             row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
         # ---- Devices & sharing ------------------------------------------
-        dev = ttk.LabelFrame(outer, text=" Devices & sharing ", padding=12)
-        dev.pack(fill="x", pady=(12, 0))
+        dev = ttk.LabelFrame(outer, text=" Devices & sharing ", padding=8)
+        dev.pack(fill="x", pady=(6, 0))
         dev.columnconfigure(1, weight=1)
 
         self._route_vars = {}
@@ -77,7 +77,7 @@ class ProfileEditor(tk.Toplevel):
                   ("Camera", "camera")]
         for i, (label, key) in enumerate(routes):
             ttk.Label(dev, text=label).grid(row=i, column=0, sticky="w",
-                                            pady=(0 if i == 0 else 6, 2))
+                                            pady=(0 if i == 0 else 4, 2))
             allowed = ROUTES[key]
             current = profile.get(key, "host" if key != "camera" else "remote")
             if current not in allowed:
@@ -87,10 +87,10 @@ class ProfileEditor(tk.Toplevel):
             self._route_vars[key] = (var, key)
             ttk.Combobox(dev, textvariable=var, values=values,
                          state="readonly", width=30).grid(
-                row=i, column=1, sticky="w", pady=(0 if i == 0 else 6, 2))
+                row=i, column=1, sticky="w", pady=(0 if i == 0 else 4, 2))
 
         camrow = ttk.Frame(dev)
-        camrow.grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        camrow.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
         ttk.Label(camrow, text="Camera device:").pack(side="left")
         self._camdev_var = tk.StringVar(value=str(profile.get("camDevice", "0")))
         self._camdev_box = ttk.Combobox(camrow, textvariable=self._camdev_var,
@@ -103,21 +103,19 @@ class ProfileEditor(tk.Toplevel):
 
         self._setup_btn = ttk.Button(dev, text="Set up receivers on host…",
                                      command=self._setup_host)
-        self._setup_btn.grid(row=4, column=0, columnspan=2, sticky="w",
-                             pady=(6, 0))
-        ttk.Label(dev, textvariable=self._camtest_var, foreground="#888"
-                  ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self._setup_btn.grid(row=4, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(dev, textvariable=self._camtest_var, foreground="#888",
+                  wraplength=420, justify="left"
+                  ).grid(row=4, column=1, sticky="w", pady=(6, 0))
 
         ttk.Label(dev, foreground="#888", wraplength=500, justify="left",
-                  text="Routing a device to this computer: speaker needs "
-                       "pipewire-module-xrdp on the host; mic/camera stream over "
-                       "ffmpeg — one click above installs the receiver services "
-                       "on the host (SSH + sudo password may be asked once)."
-                  ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+                  text="Speaker needs pipewire-module-xrdp on the host; "
+                       "mic/camera stream over ffmpeg. One-click setup above."
+                  ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         # ---- Clipboard & files ------------------------------------------
-        cf = ttk.LabelFrame(outer, text=" Clipboard & files ", padding=12)
-        cf.pack(fill="x", pady=(12, 0))
+        cf = ttk.LabelFrame(outer, text=" Clipboard & files ", padding=8)
+        cf.pack(fill="x", pady=(6, 0))
         self._clip_var = tk.BooleanVar(value=profile.get("clipboard", True))
         self._files_var = tk.BooleanVar(value=profile.get("fileTransfer", True))
         ttk.Checkbutton(cf, text="Share clipboard (copy / paste)",
@@ -126,9 +124,13 @@ class ProfileEditor(tk.Toplevel):
                                  "enables file copy/paste)",
                         variable=self._files_var).pack(anchor="w", pady=(4, 0))
 
-        # ---- Keyboard ------------------------------------------------------
-        kb = ttk.LabelFrame(outer, text=" Keyboard ", padding=12)
-        kb.pack(fill="x", pady=(12, 0))
+        # ---- Keyboard & scrolling -----------------------------------------
+        inp = ttk.LabelFrame(outer, text=" Keyboard & mouse/trackpad ",
+                             padding=8)
+        inp.pack(fill="x", pady=(6, 0))
+        inp.columnconfigure(0, weight=1)
+        inp.columnconfigure(1, weight=1)
+
         from ..keyboard import choices
         kbvalues = choices()
         current = str(profile.get("keyboard", "auto"))
@@ -138,19 +140,44 @@ class ProfileEditor(tk.Toplevel):
             current, display = "auto", "Auto-detect (current Mac layout)"
         self._kb_var = tk.StringVar(value=display)
         labels = [lab for _, lab in kbvalues]
-        ttk.Combobox(kb, textvariable=self._kb_var, state="readonly",
-                     width=34,
+        ttk.Label(inp, text="Keyboard layout").grid(
+            row=0, column=0, sticky="w")
+        ttk.Combobox(inp, textvariable=self._kb_var, state="readonly",
+                     width=30,
                      values=["Auto-detect (current Mac layout)"] + labels
-                     ).grid(row=0, column=0, sticky="w")
-        ttk.Label(kb, foreground="#888",
-                  text="Auto-detect sends your currently selected keyboard "
-                       "layout (US, German, …) to the remote session at "
-                       "login. Applies at session start."
-                  ).grid(row=1, column=0, sticky="w", pady=(6, 0))
+                     ).grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        ttk.Label(inp, foreground="#888", wraplength=310, justify="left",
+                  text="Auto-detect sends the layout you are using "
+                       "(US, German, …) to the session."
+                  ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+
+        from ..scroll import choices as scroll_choices
+        scrollvalues = scroll_choices()
+        current_scroll = str(profile.get(
+            "mouseScroll", profile.get("scroll", "auto"))).lower()
+        scroll_display = ("Auto-detect (current device)" if current_scroll == "auto"
+                          else next((lab for v, lab in scrollvalues
+                                     if v == current_scroll), None))
+        if scroll_display is None:     # stale/unknown stored value
+            current_scroll, scroll_display = "auto", "Auto-detect (current device)"
+        self._scroll_var = tk.StringVar(value=scroll_display)
+        ttk.Label(inp, text="Scroll direction").grid(
+            row=0, column=1, sticky="w", padx=(12, 0))
+        ttk.Combobox(inp, textvariable=self._scroll_var, state="readonly",
+                     width=30,
+                     values=["Auto-detect (current device)"] +
+                            [lab for _, lab in scrollvalues]
+                     ).grid(row=1, column=1, sticky="ew", padx=(12, 0),
+                            pady=(2, 0))
+        ttk.Label(inp, foreground="#888", wraplength=310, justify="left",
+                  text="Auto-detect matches the remote scroll direction to "
+                       "the mouse or trackpad in use."
+                  ).grid(row=2, column=1, sticky="w", padx=(12, 0),
+                         pady=(4, 0))
 
         # ---- Password ------------------------------------------------------
-        pw = ttk.LabelFrame(outer, text=" Password ", padding=12)
-        pw.pack(fill="x", pady=(12, 0))
+        pw = ttk.LabelFrame(outer, text=" Password ", padding=8)
+        pw.pack(fill="x", pady=(6, 0))
         ttk.Checkbutton(pw, text="Save password (Keychain on macOS)",
                         variable=self._save_pw_var).pack(anchor="w")
         pwrow = ttk.Frame(pw)
@@ -164,13 +191,13 @@ class ProfileEditor(tk.Toplevel):
                                                         self._pw_show)
                         ).pack(side="left")
         ttk.Label(pw, foreground="#888",
-                  text="Saved passwords connect directly — the app pipes the "
-                       "password to FreeRDP via stdin; leave blank to keep the "
-                       "current one.").pack(anchor="w", pady=(6, 0))
+                  text="Saved passwords connect directly; leave blank to keep "
+                       "the current one — it never appears on the command line."
+                  ).pack(anchor="w", pady=(6, 0))
 
         # ---- buttons --------------------------------------------------------
         btns = ttk.Frame(outer)
-        btns.pack(fill="x", pady=(16, 0))
+        btns.pack(fill="x", pady=(6, 0))
         ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right")
         self._save_btn = ttk.Button(btns, text="Save", command=self._save)
         self._save_btn.pack(side="right", padx=(0, 8))
@@ -226,6 +253,15 @@ class ProfileEditor(tk.Toplevel):
             value = next((v for v, lab in choices()
                           if lab == current_label), "auto")
             self.profile["keyboard"] = value
+        scroll_label = self._scroll_var.get()
+        if scroll_label.startswith("Auto-detect"):
+            scroll_value = "auto"
+        else:
+            from ..scroll import choices as scroll_choices
+            scroll_value = next((v for v, lab in scroll_choices()
+                                 if lab == scroll_label), "auto")
+        self.profile["mouseScroll"] = scroll_value
+        self.profile["scroll"] = scroll_value
         return self._pw_var.get() or None
 
     def _save(self):

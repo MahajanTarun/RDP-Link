@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Connect-to-a-device card. Shared by every layout variant. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/OfficeCard"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        style="@style/OfficeTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Connect to a device" />
+
+    <TextView
+        style="@style/OfficeLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/label_gap"
+        android:text="Address, RDP Link ID, or relay URL" />
+
+    <EditText
+        android:id="@+id/url"
+        style="@style/OfficeInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/field_gap"
+        android:hint="192.168.1.20:8088 or 123 456 789"
+        android:inputType="textUri" />
+
+    <TextView
+        style="@style/OfficeLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/label_gap"
+        android:text="Recent devices" />
+
+    <ListView
+        android:id="@+id/recentList"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/recent_list_height"
+        android:layout_marginTop="@dimen/field_gap"
+        android:background="@drawable/bg_input"
+        android:clipToPadding="false"
+        android:divider="@color/antd_border_secondary"
+        android:dividerHeight="1dp"
+        android:nestedScrollingEnabled="true"
+        android:padding="4dp" />
+
+    <TextView
+        style="@style/OfficeBody"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/button_gap"
+        android:text="Long-press a recent device to remove it." />
+</LinearLayout>

@@ -28,6 +28,9 @@ var specialKeys = map[string]string{
 }
 
 func Inject(ev map[string]any) error {
+	if err := ensurePermission(); err != nil {
+		return err
+	}
 	t, _ := ev["type"].(string)
 	switch t {
 	case "move":

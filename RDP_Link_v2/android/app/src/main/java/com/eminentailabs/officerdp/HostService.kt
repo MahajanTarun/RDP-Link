@@ -52,6 +52,16 @@ class HostService : Service() {
         private const val AUTH_MAX_FAILS = 20
         private const val MAX_AUTH_IPS = 4096
         private const val MAX_SESSIONS = 64
+        private const val HEARTBEAT_MS = 5_000L
+    }
+
+    private val prefs by lazy { getSharedPreferences("officerdp", MODE_PRIVATE) }
+    private val hostHeartbeat = Handler(Looper.getMainLooper())
+    private val hostHeartbeatTick = object : Runnable {
+        override fun run() {
+            prefs.edit().putLong("host_heartbeat", System.currentTimeMillis()).apply()
+            hostHeartbeat.postDelayed(this, HEARTBEAT_MS)
+        }
     }
 
     private var projection: MediaProjection? = null
@@ -79,9 +89,13 @@ class HostService : Service() {
     override fun onCreate() {
         super.onCreate()
         peerId = PeerIdentity.get(this)
+        prefs.edit()
+            .putBoolean("sharing", true)
+            .putLong("host_heartbeat", System.currentTimeMillis())
+            .apply()
+        hostHeartbeat.postDelayed(hostHeartbeatTick, HEARTBEAT_MS)
         startForegroundCompat(notification())
-        val port = getSharedPreferences("officerdp", MODE_PRIVATE)
-            .getInt("port", DEFAULT_PORT)
+        val port = prefs.getInt("port", DEFAULT_PORT)
         server = HostServer(this, latestFrame, latestJpeg, frameEtag,
             frameWidth, frameHeight, peerId, port)
         try {
@@ -182,6 +196,8 @@ class HostService : Service() {
     }
 
     override fun onDestroy() {
+        hostHeartbeat.removeCallbacks(hostHeartbeatTick)
+        prefs.edit().putBoolean("sharing", false).remove("host_heartbeat").apply()
         heartbeat?.shutdownNow()
         heartbeat = null
         try {
@@ -429,22 +445,55 @@ class HostService : Service() {
         // authorized accepts the access password as a header, or a session
         // token as an HttpOnly cookie. Neither the password nor the session
         // token is accepted from a URL.
-        private fun authorized(session: IHTTPSession): Boolean {
-            if (!checkOrigin(session)) return false
+        //
+        // The credential is evaluated before the throttle is applied. A
+        // client that knows the password must not stay locked out for a
+        // minute because a different client on the same IP guessed wrong;
+        // wrong attempts still receive 429 while the window is full.
+        private fun authorize(session: IHTTPSession): Response? {
+            if (!checkOrigin(session)) {
+                return newFixedLengthResponse(
+                    Response.Status.FORBIDDEN, "text/plain", "cross-origin request rejected"
+                )
+            }
             val ip = clientKey(session)
             val now = System.currentTimeMillis()
-            if (isThrottled(ip, now)) return false
             val expected = password
-            if (expected.isEmpty()) return false
-            session.headers["x-office-password"]?.let {
-                val valid = constantEquals(expected, it)
-                if (valid) clearFailures(ip) else recordFailure(ip, now)
-                return valid
+            if (expected.isEmpty()) {
+                return newFixedLengthResponse(
+                    Response.Status.FORBIDDEN, "text/plain", "host password not configured"
+                )
             }
+            session.headers["x-office-password"]?.let { supplied ->
+                if (constantEquals(expected, supplied)) {
+                    clearFailures(ip)
+                    return null
+                }
+                if (isThrottled(ip, now)) return tooManyAttempts()
+                recordFailure(ip, now)
+                return unauthorized()
+            }
+            // An existing session has already proved the password and is not
+            // throttled by unrelated failures.
             val token = sessionToken(session)
-            val valid = token != null && isValidSession(token)
-            if (valid) clearFailures(ip) else recordFailure(ip, now)
-            return valid
+            if (token != null && isValidSession(token)) {
+                clearFailures(ip)
+                return null
+            }
+            if (isThrottled(ip, now)) return tooManyAttempts()
+            recordFailure(ip, now)
+            return unauthorized()
+        }
+
+        private fun unauthorized(): Response =
+            newFixedLengthResponse(Response.Status.UNAUTHORIZED, "text/plain", "unauthorized")
+
+        private fun tooManyAttempts(): Response {
+            val response = newFixedLengthResponse(
+                Response.Status.TOO_MANY_REQUESTS, "text/plain", "too many attempts"
+            )
+            response.addHeader("Retry-After", (AUTH_WINDOW_MS / 1000).toString())
+            return response
         }
 
         private fun handleSession(session: IHTTPSession): Response {
@@ -460,12 +509,12 @@ class HostService : Service() {
             }
             val ip = clientKey(session)
             val now = System.currentTimeMillis()
-            if (isThrottled(ip, now)) {
+            val expected = password
+            if (expected.isEmpty()) {
                 return newFixedLengthResponse(
-                    Response.Status.TOO_MANY_REQUESTS, "text/plain", "too many attempts"
+                    Response.Status.FORBIDDEN, "text/plain", "host password not configured"
                 )
             }
-            val expected = password
             val supplied = session.headers["x-office-password"]
                 ?: bodyText(session).takeIf { it.isNotEmpty() }?.let {
                     try {
@@ -475,7 +524,8 @@ class HostService : Service() {
                     }
                 }
                 ?: ""
-            if (expected.isEmpty() || !constantEquals(expected, supplied)) {
+            if (!constantEquals(expected, supplied)) {
+                if (isThrottled(ip, now)) return tooManyAttempts()
                 recordFailure(ip, now)
                 return newFixedLengthResponse(
                     Response.Status.UNAUTHORIZED, "text/plain", "unauthorized"
@@ -516,11 +566,7 @@ class HostService : Service() {
                 )
             }
             if (uri == "/" || uri == "/index.html") return serveViewer()
-            if (!authorized(session)) {
-                return newFixedLengthResponse(
-                    Response.Status.UNAUTHORIZED, "text/plain", "unauthorized"
-                )
-            }
+            authorize(session)?.let { return it }
             if (uri == "/info") {
                 val prefs = service.getSharedPreferences("officerdp", MODE_PRIVATE)
                 val alias = prefs.getString("alias", "Android") ?: "Android"
@@ -532,6 +578,7 @@ class HostService : Service() {
                     .put("port", port)
                     .put("version", VERSION)
                     .put("platform", "android")
+                    .put("input", InputAccessibilityService.instance != null)
                 return newFixedLengthResponse(
                     Response.Status.OK, "application/json", body.toString()
                 )
@@ -764,20 +811,30 @@ class HostService : Service() {
                 JSONObject()
             }
             val a11y = InputAccessibilityService.instance
+            if (a11y == null) {
+                // Never report success for input that was not delivered: the
+                // guest would believe the tap/keystroke worked.
+                return newFixedLengthResponse(
+                    Response.Status.SERVICE_UNAVAILABLE, "text/plain",
+                    "remote control not enabled: enable the RDP Link accessibility service"
+                )
+            }
             val type = ev.optString("type")
             val width = frameWidth.get().coerceAtLeast(1)
             val height = frameHeight.get().coerceAtLeast(1)
             val x = ev.optDouble("x", 0.0).toFloat().let { if (it <= 1f) it * width else it }
             val y = ev.optDouble("y", 0.0).toFloat().let { if (it <= 1f) it * height else it }
             when (type) {
-                "move" -> a11y?.pointerMove(x, y)
-                "click" -> a11y?.tap(x, y)
-                "down" -> a11y?.pointerDown(x, y)
-                "up" -> a11y?.pointerUp(x, y)
-                "key" -> a11y?.key(ev.optString("key"))
-                "text" -> a11y?.appendText(ev.optString("text"))
-                "wheel" -> a11y?.scroll(ev.optInt("delta", 1))
-                else -> Unit
+                "move" -> a11y.pointerMove(x, y)
+                "click" -> a11y.tap(x, y)
+                "down" -> a11y.pointerDown(x, y)
+                "up" -> a11y.pointerUp(x, y)
+                "key" -> a11y.key(ev.optString("key"))
+                "text" -> a11y.appendText(ev.optString("text"))
+                "wheel" -> a11y.scroll(ev.optInt("delta", 1))
+                else -> return newFixedLengthResponse(
+                    Response.Status.BAD_REQUEST, "text/plain", "unknown input type"
+                )
             }
             return newFixedLengthResponse(Response.Status.NO_CONTENT, "text/plain", "")
         }
